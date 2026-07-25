@@ -249,7 +249,7 @@ body {
     bottom: 0;
     left: 0;
     right: 0;
-    background: var(--controls-background);
+    background: none;
     height: 53px;
     z-index: 3;
     transition: all 0.5s !important;

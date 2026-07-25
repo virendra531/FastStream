@@ -247,6 +247,17 @@ export class InterfaceController {
 
   addVideo(video) {
     this.dressVideo(video);
+
+    video.addEventListener('loadedmetadata', () => {
+      if (video.videoHeight > video.videoWidth) {
+        video.classList.add("portrait");
+        video.classList.remove("landscape");
+      } else {
+        video.classList.add("landscape");
+        video.classList.remove("portrait");
+      }
+    });
+
     DOMElements.videoContainer.appendChild(video);
   }
 
@@ -1119,16 +1130,32 @@ export class InterfaceController {
 
   setFullscreenStatus(status) {
     const fullScreenButton = DOMElements.fullscreen;
-    if (status) {
+    const controlsContainer = DOMElements.controlsContainer;
+    if (status)
+    {
       fullScreenButton.classList.add('out');
+      controlsContainer.classList.add('disabled');
       this.state.fullscreen = true;
-    } else {
+    }
+    else
+    {
       fullScreenButton.classList.remove('out');
-      if (this.state.fullscreen) {
+      controlsContainer.classList.remove('disabled');
+      if (this.state.fullscreen)
+      {
         this.state.fullscreen = false;
         this.fullscreenToggle(false);
       }
     }
+
+    if (video.videoHeight > video.videoWidth) {
+      video.classList.add("portrait");
+      video.classList.remove("landscape");
+    } else {
+      video.classList.add("landscape");
+      video.classList.remove("portrait");
+    }
+    
   }
 
   playPauseToggle() {

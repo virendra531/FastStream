@@ -1,0 +1,17 @@
+.fluid_controls_container.disabled {
+    display: none;
+}
+
+.fluid_html_on_pause{
+    display: none;
+}
+
+.video-container>video.portrait {
+    object-fit: contain !important;
+    aspect-ratio: 10 / 16 !important;
+}
+
+.video-container>video.landscape {
+    object-fit: fill !important;
+    aspect-ratio: 16 / 10 !important;
+}
