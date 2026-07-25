@@ -8,6 +8,8 @@ ModesMap.set('m3u8', PlayerModes.ACCELERATED_HLS);
 ModesMap.set('m3u8v1', PlayerModes.ACCELERATED_HLS);
 ModesMap.set('m3u', PlayerModes.ACCELERATED_HLS);
 ModesMap.set('mpd', PlayerModes.ACCELERATED_DASH);
+ModesMap.set('ts', PlayerModes.ACCELERATED_MP4);
+ModesMap.set('m2ts', PlayerModes.ACCELERATED_MP4);
 ModesMap.set('youtube', PlayerModes.ACCELERATED_YT);
 
 ModesMap.set('vmpatch', PlayerModes.ACCELERATED_VM);

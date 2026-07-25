@@ -308,7 +308,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
   } else if (msg.type === MessageTypes.DETECTED_SOURCE) {
-    const mode = URLUtils.getModeFromExtension(msg.ext);
+    let mode = URLUtils.getModeFromExtension(msg.ext);
+    if (!mode) {
+      mode = PlayerModes.ACCELERATED_HLS;
+    }
     const headers = msg.headers || {};
     onSourceRecieved({
       url: msg.url,
@@ -1265,11 +1268,21 @@ async function openPlayersWithSources(tab) {
     for (let i = 0; i < framesWithSources.length; i++) {
       openPlayer(framesWithSources[i].frame);
     }
+  } else {
+    // Fallback: open player in frames with video elements even without detected sources
+    for (const frame of tab.getFrames()) {
+      if (!frame.isPlayer && !frame.playerOpening) {
+        const videoSize = await getVideoSize(frame);
+        if (videoSize && videoSize > 0) {
+          openPlayer(frame);
+        }
+      }
+    }
   }
 }
 
 const webRequestPerms = ['requestHeaders'];
-const webRequestPerms2 = [];
+const webRequestPerms2 = ['responseHeaders'];
 
 if (EnvUtils.isChrome()) {
   webRequestPerms.push('extraHeaders');
@@ -1331,6 +1344,24 @@ chrome.webRequest.onHeadersReceived.addListener(
       }
 
       let mode = URLUtils.getModeFromExtension(ext);
+      if (!mode) {
+        // Check Content-Type header for XHR/fetch requests (e.g., PHP-proxied HLS)
+        if (details.responseHeaders) {
+          const ctHeader = details.responseHeaders.find(
+              (h) => h.name.toLowerCase() === 'content-type',
+          );
+          if (ctHeader) {
+            const ct = ctHeader.value.toLowerCase();
+            if (ct.includes('video/mp2t') || ct.includes('video/mp4') || ct.includes('video/webm')) {
+              mode = PlayerModes.ACCELERATED_MP4;
+            } else if (ct.includes('application/x-mpegURL') || ct.includes('application/vnd.apple.mpegurl')) {
+              mode = PlayerModes.ACCELERATED_HLS;
+            } else if (ct.includes('application/dash+xml') || ct.includes('video/mpd')) {
+              mode = PlayerModes.ACCELERATED_DASH;
+            }
+          }
+        }
+      }
       if (!mode) {
         if (details.type === 'media') {
           mode = PlayerModes.ACCELERATED_MP4;

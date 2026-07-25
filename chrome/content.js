@@ -232,11 +232,28 @@
   }
 
   function handlePlayerOpen(request, sender, sendResponse) {
-    getVideo().then((video) => {
+    getVideo().then(async (video) => {
       if (!video && !request.force) {
         console.log('no video found');
         sendResponse('no_video');
         return;
+      }
+
+      if (video && video.video) {
+        try {
+          const domSources = await extractSourcesFromDOM();
+          domSources.forEach((s) => {
+            chrome.runtime.sendMessage({
+              type: 'DETECTED_SOURCE',
+              url: s.url,
+              ext: s.ext,
+              headers: {
+                'Referer': location.href,
+                'Origin': location.origin,
+              },
+            });
+          });
+        } catch (e) {}
       }
 
       const playerFillsScreen = video?.highest?.tagName === 'BODY';
@@ -1149,6 +1166,159 @@
       parents: parentElementsWithSameBounds,
       highest: parentElementsWithSameBounds.length > 0 ? parentElementsWithSameBounds[parentElementsWithSameBounds.length - 1] : largestVideo.video,
     };
+  }
+
+  function extractSourcesFromDOM() {
+    const results = [];
+    const seen = new Set();
+
+    function addSource(url, ext) {
+      if (!url || seen.has(url) || url.startsWith('blob:')) return;
+      try { url = new URL(url, document.baseURI).href; } catch (e) {}
+      seen.add(url);
+      results.push({url, ext: ext || getExt(url) || 'mp4'});
+    }
+
+    function getExt(url) {
+      try {
+        const pathname = new URL(url).pathname;
+        const dotIndex = pathname.lastIndexOf('.');
+        if (dotIndex > -1) return pathname.substring(dotIndex + 1).toLowerCase().split('?')[0];
+      } catch (e) {}
+      return null;
+    }
+
+    const vid = document.querySelector('video');
+    if (!vid) return Promise.resolve(results);
+
+    // Direct DOM property access (works in isolated world)
+    try {
+      if (vid.player && typeof vid.player.currentSrc === 'function') {
+        const src = vid.player.currentSrc();
+        if (src && !src.startsWith('blob:')) addSource(src);
+      }
+      if (vid.player && typeof vid.player.currentSources === 'function') {
+        const srcs = vid.player.currentSources();
+        if (Array.isArray(srcs)) srcs.forEach((s) => {
+          const u = typeof s === 'string' ? s : (s && s.src);
+          const ext = s && s.type && s.type.includes('mpegurl') ? 'm3u8' : null;
+          if (u) addSource(u, ext);
+        });
+      }
+    } catch (e) {}
+
+    try {
+      if (vid.hls && vid.hls.url) addSource(vid.hls.url, 'm3u8');
+      if (vid._hls && vid._hls.url) addSource(vid._hls.url, 'm3u8');
+    } catch (e) {}
+
+    try {
+      vid.querySelectorAll('source').forEach((s) => {
+        const u = s.getAttribute('src');
+        if (u) addSource(u);
+      });
+      if (vid.src && !vid.src.startsWith('blob:')) addSource(vid.src);
+    } catch (e) {}
+
+    if (results.length > 0) return Promise.resolve(results);
+
+    // Fallback: inject script into MAIN world
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener('message', onMessage);
+        resolve(results);
+      }, 1500);
+
+      function onMessage(event) {
+        if (event.data?.type === '__faststream_detected_sources') {
+          window.removeEventListener('message', onMessage);
+          clearTimeout(timeout);
+          for (const s of event.data.sources || []) {
+            addSource(s.url, s.ext);
+          }
+          resolve(results);
+        }
+      }
+      window.addEventListener('message', onMessage);
+
+      const script = document.createElement('script');
+      script.textContent = `
+        (() => {
+          const sources = [];
+          function getExt(url) {
+            try {
+              const p = new URL(url, location.href).pathname;
+              const i = p.lastIndexOf('.');
+              if (i > -1) return p.substring(i + 1).toLowerCase().split('?')[0];
+            } catch(e) {}
+            return null;
+          }
+          function add(url, ext) {
+            if (!url || url.startsWith('blob:')) return;
+            try { url = new URL(url, location.href).href; } catch(e) {}
+            sources.push({url, ext: ext || getExt(url) || 'mp4'});
+          }
+          function extractFromPlayer(p) {
+            if (!p) return;
+            try {
+              if (typeof p.currentSrc === 'function') {
+                const s = p.currentSrc();
+                if (s && !s.startsWith('blob:')) add(s);
+              }
+            } catch(e) {}
+            try {
+              if (typeof p.currentSources === 'function') {
+                const ss = p.currentSources();
+                if (Array.isArray(ss)) ss.forEach(s => {
+                  const u = typeof s === 'string' ? s : (s && s.src);
+                  const ext = s && s.type && s.type.toLowerCase().includes('mpegurl') ? 'm3u8' : null;
+                  if (u) add(u, ext);
+                });
+              }
+            } catch(e) {}
+            try {
+              const opts = p.options_ || p.options;
+              if (opts && opts.sources && Array.isArray(opts.sources)) {
+                opts.sources.forEach(s => {
+                  const u = typeof s === 'string' ? s : (s && s.src);
+                  const ext = s && s.type && s.type.toLowerCase().includes('mpegurl') ? 'm3u8' : null;
+                  if (u) add(u, ext);
+                });
+              }
+            } catch(e) {}
+          }
+          const vid = document.querySelector('video');
+          if (vid) {
+            try { if (vid.player) extractFromPlayer(vid.player); } catch(e) {}
+            try {
+              if (window.videojs) {
+                if (vid.id) extractFromPlayer(window.videojs(vid.id));
+                if (typeof window.videojs.getAllPlayers === 'function') {
+                  window.videojs.getAllPlayers().forEach(p => extractFromPlayer(p));
+                }
+                if (window.videojs.players) {
+                  Object.values(window.videojs.players).forEach(p => extractFromPlayer(p));
+                }
+              }
+            } catch(e) {}
+            try {
+              if (vid.hls && vid.hls.url) add(vid.hls.url, 'm3u8');
+              if (vid._hls && vid._hls.url) add(vid._hls.url, 'm3u8');
+            } catch(e) {}
+            try {
+              vid.querySelectorAll('source').forEach(s => {
+                const u = s.getAttribute('src');
+                if (u) add(u);
+              });
+              if (vid.src && !vid.src.startsWith('blob:')) add(vid.src);
+            } catch(e) {}
+          }
+          window.postMessage({type: '__faststream_detected_sources', sources}, '*');
+        })();
+      `;
+      (document.head || document.documentElement).appendChild(script);
+      script.remove();
+    });
   }
 
   function url_to_absolute(urlStr) {
