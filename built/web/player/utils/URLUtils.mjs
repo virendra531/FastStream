@@ -114,10 +114,48 @@ export class URLUtils {
     return url.split(/[#?]/)[0];
   }
   static get_url_extension(url) {
-    return this.strip_queryhash(url).split('.').pop().trim().toLowerCase();
+    const ext = this.strip_queryhash(url).split('.').pop().trim().toLowerCase();
+    if (ModesMap.has(ext)) return ext;
+    // If the path extension isn't recognized, check if the hash fragment
+    // contains a video path (e.g. https://example.com/#mp4/chunk/...)
+    try {
+      const urlObj = new URL(url);
+      const hash = urlObj.hash.substring(1);
+      if (hash) {
+        // Extract the first path segment from the hash (before any / or ?)
+        const hashPath = hash.split('?')[0];
+        const hashFirstSeg = hashPath.split('/')[0].split('.').pop().toLowerCase();
+        if (ModesMap.has(hashFirstSeg)) return hashFirstSeg;
+      }
+    } catch (e) {}
+    return ext;
   }
   static get_file_name(url) {
     return this.strip_queryhash(url).split('/').pop().trim();
+  }
+  /**
+   * Checks if a URL is a player page URL (hash-based routing) rather than a direct video file.
+   * Player pages like Hydrax use hash fragments for client-side routing:
+   * e.g. https://playhydrax.com/#mp4/chunk/2/1027297397/2097152/1080p/h264
+   * The hash is never sent to the server, so these URLs can't be fetched as direct video.
+   */
+  static isPlayerPageURL(url) {
+    try {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname;
+      const hash = urlObj.hash.substring(1);
+      if (!hash) return false;
+      // Only check URLs where the path is just the root (player page, not a video file)
+      if (pathname !== '/') return false;
+      // Check if hash starts with a recognized video extension as first path segment
+      // followed by more path segments (indicating routing, not just a filename)
+      const hashPath = hash.split('?')[0];
+      const hashParts = hashPath.split('/');
+      if (hashParts.length < 2) return false;
+      const hashFirstSeg = hashParts[0].toLowerCase();
+      return ModesMap.has(hashFirstSeg);
+    } catch (e) {}
+    return false;
   }
   static getModeFromExtension(ext) {
     return ModesMap.get(ext);
