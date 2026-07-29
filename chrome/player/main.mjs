@@ -151,18 +151,26 @@ async function recieveSources(request, sendResponse) {
     subs = await loadSubtitles(subs);
     subs = await sortSubtitles(subs);
 
+    const loadedTracks = [];
     try {
       subs.forEach((sub, i) => {
         const track = new SubtitleTrack(sub.label, sub.language);
         try {
           track.loadText(sub.data);
           if (track.cues.length > 0) {
-            window.fastStream.loadSubtitleTrack(track, request.autoSetSource);
+            const t = window.fastStream.loadSubtitleTrack(track, false);
+            loadedTracks.push(t);
           }
         } catch (e) {
           console.error(e);
         }
       });
+      const english = loadedTracks.find(t => t.label === 'English')
+          || loadedTracks.find(t => t.language === 'en')
+          || loadedTracks.find(t => t.label && t.label.toLowerCase().startsWith('english'));
+      if (english) {
+        window.fastStream.interfaceController.subtitlesManager.activateTrack(english);
+      }
     } catch (e) {
       console.error(e);
     }
