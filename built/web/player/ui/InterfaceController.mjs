@@ -312,6 +312,7 @@ export class InterfaceController {
     });
     WebUtils.setupTabIndex(DOMElements.windowedFullscreen);
     document.addEventListener('fullscreenchange', this.updateFullScreenButton.bind(this));
+    document.addEventListener('webkitfullscreenchange', this.updateFullScreenButton.bind(this));
     DOMElements.playerContainer.addEventListener('mousemove', this.onPlayerMouseMove.bind(this));
     DOMElements.controlsContainer.addEventListener('mouseenter', this.onControlsMouseEnter.bind(this));
     DOMElements.controlsContainer.addEventListener('mouseleave', this.onControlsMouseLeave.bind(this));
@@ -929,6 +930,21 @@ export class InterfaceController {
     });
   }
   async fullscreenToggle(force) {
+    const video = DOMElements.videoContainer?.querySelector('video');
+    // iOS Safari (iPhone) has no Fullscreen API; use the video element's native
+    // fullscreen instead. Must be called synchronously within the user gesture.
+    if (video && typeof video.webkitEnterFullscreen === 'function' && !document.fullscreenEnabled) {
+      if (force === false || document.webkitIsFullScreen) {
+        if (typeof video.webkitExitFullscreen === 'function') {
+          video.webkitExitFullscreen();
+        }
+        this.setFullscreenStatus(false);
+      } else {
+        video.webkitEnterFullscreen();
+        this.setFullscreenStatus(true);
+      }
+      return;
+    }
     if (document.fullscreenEnabled) {
       const newValue = force === undefined ? !document.fullscreenElement : force;
       if (newValue) {
@@ -977,12 +993,13 @@ export class InterfaceController {
         this.fullscreenToggle(false);
       }
     }
-    if (video.videoHeight > video.videoWidth) {
+    const video = DOMElements.videoContainer?.querySelector('video');
+    if (video && video.videoHeight > video.videoWidth) {
       video.classList.add("portrait");
       video.classList.remove("landscape");
     } else {
-      video.classList.add("landscape");
-      video.classList.remove("portrait");
+      video?.classList.add("landscape");
+      video?.classList.remove("portrait");
     }
   }
   playPauseToggle() {

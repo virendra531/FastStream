@@ -8,10 +8,16 @@
 
 .video-container>video.portrait {
     object-fit: contain !important;
-    aspect-ratio: 10 / 16 !important;
 }
 
 .video-container>video.landscape {
     object-fit: fill !important;
-    aspect-ratio: 16 / 10 !important;
+}
+
+.fluid_video_wrapper.fluid_player_layout_default:fullscreen {
+    width: 100% !important;
+    height: 100% !important;
+    position: absolute;
+    top: 0;
+    left: 0;
 }
