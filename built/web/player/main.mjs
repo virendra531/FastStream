@@ -109,7 +109,7 @@ async function recieveSources(request, sendResponse) {
       autoSetSource = mp4SourceCandidates[0];
     }
   }
-  if (window.fastStream.source || !request.autoSetSource) {
+  if ((window.fastStream.source && !request.forceSetSource) || !request.autoSetSource) {
     autoSetSource = null;
   }
   if (autoSetSource) {

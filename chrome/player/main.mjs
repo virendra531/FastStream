@@ -127,7 +127,7 @@ async function recieveSources(request, sendResponse) {
     }
   }
 
-  if (window.fastStream.source || !request.autoSetSource) {
+  if ((window.fastStream.source && !request.forceSetSource) || !request.autoSetSource) {
     autoSetSource = null;
   }
 
