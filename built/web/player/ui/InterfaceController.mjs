@@ -217,6 +217,9 @@ export class InterfaceController {
         video.classList.remove("portrait");
       }
     });
+    video.addEventListener('webkitfullscreenchange', () => {
+      this.setFullscreenStatus(!!video.webkitDisplayingFullscreen);
+    });
     DOMElements.videoContainer.appendChild(video);
   }
   addPreviewVideo(video) {
@@ -922,6 +925,12 @@ export class InterfaceController {
     this.updateSkipSegments();
   }
   toggleWindowedFullscreen(force) {
+    if (!EnvUtils.isExtension()) {
+      const newValue = force === undefined ? !this.state.windowedFullscreen : force;
+      DOMElements.playerContainer.classList.toggle('pseudo_fullscreen', newValue);
+      this.state.windowedFullscreen = newValue;
+      return;
+    }
     chrome.runtime.sendMessage({
       type: MessageTypes.REQUEST_WINDOWED_FULLSCREEN,
       force,
@@ -933,16 +942,29 @@ export class InterfaceController {
     const video = DOMElements.videoContainer?.querySelector('video');
     // iOS Safari (iPhone) has no Fullscreen API; use the video element's native
     // fullscreen instead. Must be called synchronously within the user gesture.
-    if (video && typeof video.webkitEnterFullscreen === 'function' && !document.fullscreenEnabled) {
-      if (force === false || document.webkitIsFullScreen) {
-        if (typeof video.webkitExitFullscreen === 'function') {
-          video.webkitExitFullscreen();
+    if (!document.fullscreenEnabled) {
+      const hasNativeIOSFullscreen = typeof video?.webkitEnterFullscreen === 'function';
+      const hasLoadedSource = !!video && (video.currentSrc || video.src);
+      if (hasNativeIOSFullscreen && hasLoadedSource) {
+        if (force === false || video.webkitDisplayingFullscreen) {
+          if (typeof video.webkitExitFullscreen === 'function') {
+            video.webkitExitFullscreen();
+          }
+          this.setFullscreenStatus(false);
+        } else {
+          try {
+            video.webkitEnterFullscreen();
+          } catch (e) {
+            this.toggleWindowedFullscreen();
+            return;
+          }
+          this.setFullscreenStatus(true);
         }
-        this.setFullscreenStatus(false);
-      } else {
-        video.webkitEnterFullscreen();
-        this.setFullscreenStatus(true);
+        return;
       }
+      // No video, video not loaded, or no native fullscreen support:
+      // fall back to a CSS pseudo-fullscreen.
+      this.toggleWindowedFullscreen();
       return;
     }
     if (document.fullscreenEnabled) {
@@ -972,7 +994,8 @@ export class InterfaceController {
     }
   }
   updateFullScreenButton() {
-    this.setFullscreenStatus(document.fullscreenElement);
+    const video = DOMElements.videoContainer?.querySelector('video');
+    this.setFullscreenStatus(!!(document.fullscreenElement || (video && video.webkitDisplayingFullscreen)));
   }
   setFullscreenStatus(status) {
     const fullScreenButton = DOMElements.fullscreen;
