@@ -17,6 +17,7 @@ import {VisChangeActions} from './options/defaults/VisChangeActions.mjs';
 import {MiniplayerPositions} from './options/defaults/MiniplayerPositions.mjs';
 import {SecureMemory} from './modules/SecureMemory.mjs';
 import {CSSFilterUtils} from './utils/CSSFilterUtils.mjs';
+import {BlackBarDetector} from './modules/analyzer/BlackBarDetector.mjs';
 import {DaltonizerTypes} from './options/defaults/DaltonizerTypes.mjs';
 import {Utils} from './utils/Utils.mjs';
 import {DefaultToolSettings} from './options/defaults/ToolSettings.mjs';
@@ -86,6 +87,8 @@ export class FastStreamClient extends EventEmitter {
       toolSettings: Utils.mergeOptions(DefaultToolSettings, {}),
       videoDelay: 0,
       videoFlip: 0,
+      removeBlackBars: false,
+      blackBarCrop: null,
       videoRotate: 0,
       disableVisualFilters: false,
       maximumDownloaders: 6,
@@ -122,6 +125,7 @@ export class FastStreamClient extends EventEmitter {
     this.videoAnalyzer = new VideoAnalyzer(this);
     this.audioAnalyzer = new AudioAnalyzer(this);
     this.frameExtractor = new PreviewFrameExtractor(this);
+    this.blackBarDetector = new BlackBarDetector();
     if (EnvUtils.isWebAudioSupported()) {
       this.audioConfigManager = new AudioConfigManager(this);
       this.audioContext = new AudioContext();
@@ -1395,8 +1399,19 @@ export class FastStreamClient extends EventEmitter {
     });
 
 
-    this.context.on(DefaultPlayerEvents.LOADEDMETADATA, (event) => {
+    this.context.on(DefaultPlayerEvents.LOADEDMETADATA, async (event) => {
       this.interfaceController.updateQualityLevels();
+
+      if (this.options.removeBlackBars && !this.options.blackBarCrop) {
+        const video = this.player.getVideo();
+        if (video) {
+          const crop = await this.blackBarDetector.detect(video);
+          if (crop) {
+            this.options.blackBarCrop = crop;
+            this.updateCSSFilters();
+          }
+        }
+      }
     });
 
 

@@ -35,6 +35,8 @@ export const DefaultOptions = {
   videoDaltonizerType: DaltonizerTypes.NONE,
   videoDaltonizerStrength: 1,
   videoZoom: 1,
+  removeBlackBars: false,
+  blackBarCrop: null,
   maxSpeed: -1,
   maxVideoSize: 5000000000, // 5GB max size
   seekStepSize: 2,
