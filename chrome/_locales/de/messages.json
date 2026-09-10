@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "Wiederholen"
     },
+    "player_remove_black_bars_label": {
+        "message": "Schwarze Balken entfernen"
+    },
     "loop_menu_start": {
         "message": "Anfang"
     },

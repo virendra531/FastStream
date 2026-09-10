@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "Tekrarla"
     },
+    "player_remove_black_bars_label": {
+        "message": "Siyah çubukları kaldır"
+    },
     "loop_menu_start": {
         "message": "Başlangıç"
     },

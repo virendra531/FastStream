@@ -2519,6 +2519,24 @@
         "zh_CN": "循环",
         "zh_TW": "重播"
     },
+    "player_remove_black_bars_label": {
+        "en": "Remove black bars",
+        "de": "Schwarze Balken entfernen",
+        "es": "Quitar barras negras",
+        "fr": "Supprimer les barres noires",
+        "id": "Hapus bar hitam",
+        "it": "Rimuovi barre nere",
+        "ja": "黒帯を除去",
+        "ko": "블랙 바 제거",
+        "ms": "Buang bar hitam",
+        "nl": "Zwarte balken verwijderen",
+        "pl": "Usuń czarne pasy",
+        "pt_BR": "Remover barras pretas",
+        "ru": "Убрать черные полосы",
+        "tr": "Siyah çubukları kaldır",
+        "zh_CN": "去除黑边",
+        "zh_TW": "移除黑邊"
+    },
     "loop_menu_start": {
         "en": "Start",
         "de": "Anfang",

@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "ループ"
     },
+    "player_remove_black_bars_label": {
+        "message": "黒帯を除去"
+    },
     "loop_menu_start": {
         "message": "開始"
     },

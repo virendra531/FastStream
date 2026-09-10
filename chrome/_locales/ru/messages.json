@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "Зациклить"
     },
+    "player_remove_black_bars_label": {
+        "message": "Убрать черные полосы"
+    },
     "loop_menu_start": {
         "message": "Начало"
     },

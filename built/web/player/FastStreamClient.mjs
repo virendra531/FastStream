@@ -17,6 +17,7 @@ import {VisChangeActions} from './options/defaults/VisChangeActions.mjs';
 import {MiniplayerPositions} from './options/defaults/MiniplayerPositions.mjs';
 import {SecureMemory} from './modules/SecureMemory.mjs';
 import {CSSFilterUtils} from './utils/CSSFilterUtils.mjs';
+import {BlackBarDetector} from './modules/analyzer/BlackBarDetector.mjs';
 import {DaltonizerTypes} from './options/defaults/DaltonizerTypes.mjs';
 import {Utils} from './utils/Utils.mjs';
 import {DefaultToolSettings} from './options/defaults/ToolSettings.mjs';
@@ -82,6 +83,8 @@ export class FastStreamClient extends EventEmitter {
       toolSettings: Utils.mergeOptions(DefaultToolSettings, {}),
       videoDelay: 0,
       videoFlip: 0,
+      removeBlackBars: false,
+      blackBarCrop: null,
       videoRotate: 0,
       disableVisualFilters: false,
       maximumDownloaders: 6,
@@ -116,6 +119,7 @@ export class FastStreamClient extends EventEmitter {
     this.videoAnalyzer = new VideoAnalyzer(this);
     this.audioAnalyzer = new AudioAnalyzer(this);
     this.frameExtractor = new PreviewFrameExtractor(this);
+    this.blackBarDetector = new BlackBarDetector();
     if (EnvUtils.isWebAudioSupported()) {
       this.audioConfigManager = new AudioConfigManager(this);
       this.audioContext = new AudioContext();
@@ -302,6 +306,17 @@ export class FastStreamClient extends EventEmitter {
     if (sessionStorage) {
       this.options.disableVisualFilters = sessionStorage.getItem('disableVisualFilters') == 'true';
     }
+    if (sessionStorage.getItem('removeBlackBars') === 'true') {
+      this.options.removeBlackBars = true;
+    }
+    const savedCrop = sessionStorage.getItem('blackBarCrop');
+    if (savedCrop) {
+      try {
+        this.options.blackBarCrop = JSON.parse(savedCrop);
+      } catch (e) {
+        // ignore
+      }
+    }
     this.options.videoBrightness = options.videoBrightness;
     this.options.videoContrast = options.videoContrast;
     this.options.videoSaturation = options.videoSaturation;
@@ -379,6 +394,57 @@ export class FastStreamClient extends EventEmitter {
       this.previewPlayer.getVideo().style.filter = filterStr;
       this.previewPlayer.getVideo().style.transform = transformStr;
     }
+  }
+  toggleRemoveBlackBars() {
+    this.options.removeBlackBars = !this.options.removeBlackBars;
+    sessionStorage.setItem('removeBlackBars', this.options.removeBlackBars);
+    if (this.options.removeBlackBars) {
+      if (!this.options.blackBarCrop && this.player) {
+        const video = this.player.getVideo();
+        if (video) {
+          this.blackBarDetector.detect(video).then((crop) => {
+            if (crop) {
+              this.options.blackBarCrop = crop;
+              sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
+            }
+            this.updateCSSFilters();
+          }).catch(() => {
+            this.updateCSSFilters();
+          });
+          return;
+        }
+      }
+    } else {
+      this.options.blackBarCrop = null;
+      this.blackBarDetector.clearManualCrop();
+      sessionStorage.removeItem('blackBarCrop');
+    }
+    this.updateCSSFilters();
+  }
+  setManualBlackBarCrop(crop) {
+    this.blackBarDetector.setManualCrop(crop);
+    this.options.blackBarCrop = crop;
+    sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
+    this.updateCSSFilters();
+  }
+  resetBlackBarCrop() {
+    this.blackBarDetector.clearManualCrop();
+    this.options.blackBarCrop = null;
+    sessionStorage.removeItem('blackBarCrop');
+    if (this.options.removeBlackBars && this.player) {
+      const video = this.player.getVideo();
+      if (video) {
+        this.blackBarDetector.detect(video).then((crop) => {
+          if (crop) {
+            this.options.blackBarCrop = crop;
+            sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
+          }
+          this.updateCSSFilters();
+        }).catch(() => {});
+        return;
+      }
+    }
+    this.updateCSSFilters();
   }
   /**
    * Loads analyzer data into the video analyzer.
@@ -703,6 +769,12 @@ export class FastStreamClient extends EventEmitter {
       console.log('setSource', source);
       await this.resetPlayer();
       this.source = source;
+      if (this.options.removeBlackBars) {
+        this.blackBarDetector.lastDetected = null;
+        if (!this.blackBarDetector.manualCrop) {
+          this.options.blackBarCrop = null;
+        }
+      }
       if (source.defaultLevelInfo?.level !== undefined) {
         this.getLevelManager().setCurrentVideoLevelID(source.defaultLevelInfo.level);
       }
@@ -1194,8 +1266,20 @@ export class FastStreamClient extends EventEmitter {
     this.context.on(DefaultPlayerEvents.LOADEDDATA, (event) => {
       this.audioConfigManager.updateChannelCount();
     });
-    this.context.on(DefaultPlayerEvents.LOADEDMETADATA, (event) => {
+    this.context.on(DefaultPlayerEvents.LOADEDMETADATA, async (event) => {
       this.interfaceController.updateQualityLevels();
+      if (this.options.removeBlackBars && !this.options.blackBarCrop) {
+        const video = this.player.getVideo();
+        if (video) {
+          try {
+            const crop = await this.blackBarDetector.detect(video);
+            if (crop) {
+              this.options.blackBarCrop = crop;
+              this.updateCSSFilters();
+            }
+          } catch (e) {}
+        }
+      }
     });
     this.context.on(DefaultPlayerEvents.PAUSE, (event) => {
       this.interfaceController.pause();

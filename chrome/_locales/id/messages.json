@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "Ulang"
     },
+    "player_remove_black_bars_label": {
+        "message": "Hapus bar hitam"
+    },
     "loop_menu_start": {
         "message": "Mulai"
     },

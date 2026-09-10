@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "Boucle"
     },
+    "player_remove_black_bars_label": {
+        "message": "Supprimer les barres noires"
+    },
     "loop_menu_start": {
         "message": "Début"
     },

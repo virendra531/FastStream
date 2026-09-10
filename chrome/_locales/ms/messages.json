@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "Gelung"
     },
+    "player_remove_black_bars_label": {
+        "message": "Buang bar hitam"
+    },
     "loop_menu_start": {
         "message": "Mula"
     },

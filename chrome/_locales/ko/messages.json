@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "반복"
     },
+    "player_remove_black_bars_label": {
+        "message": "블랙 바 제거"
+    },
     "loop_menu_start": {
         "message": "시작"
     },

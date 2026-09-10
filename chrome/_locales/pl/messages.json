@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "Pętla"
     },
+    "player_remove_black_bars_label": {
+        "message": "Usuń czarne pasy"
+    },
     "loop_menu_start": {
         "message": "Początek"
     },

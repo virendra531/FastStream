@@ -2538,6 +2538,24 @@ const TranslationMap = {
     "循环",
     "重播"
   ],
+  "player_remove_black_bars_label": [
+    "Remove black bars",
+    "Schwarze Balken entfernen",
+    "Quitar barras negras",
+    "Supprimer les barres noires",
+    "Hapus bar hitam",
+    "Rimuovi barre nere",
+    "黒帯を除去",
+    "블랙 바 제거",
+    "Buang bar hitam",
+    "Zwarte balken verwijderen",
+    "Usuń czarne pasy",
+    "Remover barras pretas",
+    "Убрать черные полосы",
+    "Siyah çubukları kaldır",
+    "去除黑边",
+    "移除黑邊"
+  ],
   "loop_menu_start": [
     "Start",
     "Anfang",

@@ -60,6 +60,14 @@ export class CSSFilterUtils {
    */
   static getTransformString(options) {
     const transforms = [];
+    if (options.removeBlackBars && options.blackBarCrop) {
+      const crop = options.blackBarCrop;
+      const scaleX = 1 / (1 - crop.left - crop.right);
+      const scaleY = 1 / (1 - crop.top - crop.bottom);
+      const translateX = (crop.left - crop.right) * scaleX;
+      const translateY = (crop.top - crop.bottom) * scaleY;
+      transforms.push(`translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`);
+    }
     if (options.videoFlip !== 0) {
       transforms.push(`scaleX(${options.videoFlip % 2 === 0 ? options.videoZoom : -options.videoZoom}) scaleY(${options.videoFlip > 1 ? -options.videoZoom : options.videoZoom})`);
     } else if (options.videoZoom !== 1) {

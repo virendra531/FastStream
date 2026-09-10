@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "Loop"
     },
+    "player_remove_black_bars_label": {
+        "message": "Rimuovi barre nere"
+    },
     "loop_menu_start": {
         "message": "Inizio"
     },

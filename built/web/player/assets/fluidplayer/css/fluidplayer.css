@@ -1999,6 +1999,10 @@ body {
     color: black;
 }
 
+.fluid_control_remove_black_bars.active {
+    color: var(--accent, #5cb8ff);
+}
+
 .tooltip:hover .tooltiptext {
     visibility: visible;
 }

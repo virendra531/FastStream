@@ -288,6 +288,12 @@ export class InterfaceController {
     DOMElements.playerContainer.addEventListener('touchstart', interactHandler, true);
     DOMElements.playPauseButton.addEventListener('click', this.playPauseToggle.bind(this));
     WebUtils.setupTabIndex(DOMElements.playPauseButton);
+    DOMElements.removeBlackBarsButton.addEventListener('click', (e) => {
+      this.client.toggleRemoveBlackBars();
+      this.updateRemoveBlackBarsIndicator();
+      e.stopPropagation();
+    });
+    WebUtils.setupTabIndex(DOMElements.removeBlackBarsButton);
     DOMElements.playPauseButtonBigCircle.addEventListener('click', (e) => {
       this.hideControlBarOnAction();
       this.playPauseToggle();
@@ -605,6 +611,13 @@ export class InterfaceController {
     this.client.options.autoplayNext = !this.client.options.autoplayNext;
     sessionStorage.setItem('autoplayNext', this.client.options.autoplayNext);
     this.updateAutoNextIndicator();
+  }
+  updateRemoveBlackBarsIndicator() {
+    if (this.client.options.removeBlackBars) {
+      DOMElements.removeBlackBarsButton.classList.add('active');
+    } else {
+      DOMElements.removeBlackBarsButton.classList.remove('active');
+    }
   }
   toggleVisualFilters() {
     this.client.options.disableVisualFilters = !this.client.options.disableVisualFilters;

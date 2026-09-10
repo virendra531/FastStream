@@ -83,4 +83,8 @@ export const DefaultToolSettings = {
     'location': 'extra',
     'priority': 600,
   },
+  'removeblackbars': {
+    'location': 'extra',
+    'priority': 700,
+  },
 };

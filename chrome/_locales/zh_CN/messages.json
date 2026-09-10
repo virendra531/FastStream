@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "循环"
     },
+    "player_remove_black_bars_label": {
+        "message": "去除黑边"
+    },
     "loop_menu_start": {
         "message": "开始"
     },
