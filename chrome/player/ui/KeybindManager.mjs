@@ -186,6 +186,11 @@ export class KeybindManager extends EventEmitter {
       this.client.updateCSSFilters();
     });
 
+    this.on('ToggleBlackBars', (e) => {
+      this.client.toggleRemoveBlackBars();
+      this.client.interfaceController.updateRemoveBlackBarsIndicator();
+    });
+
     this.on('RotateVideo', (e) => {
       const options = this.client.options;
       options.videoRotate = (options.videoRotate + 3) % 4;

@@ -419,6 +419,9 @@
     "player_loop_label": {
         "message": "Loop"
     },
+    "player_remove_black_bars_label": {
+        "message": "Remove black bars"
+    },
     "loop_menu_start": {
         "message": "Start"
     },

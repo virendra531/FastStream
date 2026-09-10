@@ -103,11 +103,13 @@ export class ToolManager {
     if (this.client.player) {
       DOMElements.screenshot.classList.remove('hidden');
       DOMElements.loopButton.classList.remove('hidden');
+      DOMElements.removeBlackBarsButton.classList.remove('hidden');
       DOMElements.skipForwardButton.classList.remove('hidden');
       DOMElements.skipBackwardButton.classList.remove('hidden');
     } else {
       DOMElements.screenshot.classList.add('hidden');
       DOMElements.loopButton.classList.add('hidden');
+      DOMElements.removeBlackBarsButton.classList.add('hidden');
       DOMElements.skipForwardButton.classList.add('hidden');
       DOMElements.skipBackwardButton.classList.add('hidden');
     }
@@ -166,6 +168,7 @@ export class ToolManager {
       more: DOMElements.moreButton,
       forward: DOMElements.skipForwardButton,
       backward: DOMElements.skipBackwardButton,
+      removeblackbars: DOMElements.removeBlackBarsButton,
     };
 
     if (this.specialReorderModeEnabled) {
