@@ -334,6 +334,18 @@ export class FastStreamClient extends EventEmitter {
       this.options.disableVisualFilters = sessionStorage.getItem('disableVisualFilters') == 'true';
     }
 
+    if (sessionStorage.getItem('removeBlackBars') === 'true') {
+      this.options.removeBlackBars = true;
+    }
+    const savedCrop = sessionStorage.getItem('blackBarCrop');
+    if (savedCrop) {
+      try {
+        this.options.blackBarCrop = JSON.parse(savedCrop);
+      } catch (e) {
+        // ignore
+      }
+    }
+
     this.options.videoBrightness = options.videoBrightness;
     this.options.videoContrast = options.videoContrast;
     this.options.videoSaturation = options.videoSaturation;
@@ -426,6 +438,61 @@ export class FastStreamClient extends EventEmitter {
       this.previewPlayer.getVideo().style.filter = filterStr;
       this.previewPlayer.getVideo().style.transform = transformStr;
     }
+  }
+
+  toggleRemoveBlackBars() {
+    this.options.removeBlackBars = !this.options.removeBlackBars;
+    sessionStorage.setItem('removeBlackBars', this.options.removeBlackBars);
+
+    if (this.options.removeBlackBars) {
+      if (!this.options.blackBarCrop && this.player) {
+        const video = this.player.getVideo();
+        if (video) {
+          this.blackBarDetector.detect(video).then((crop) => {
+            if (crop) {
+              this.options.blackBarCrop = crop;
+              sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
+              this.updateCSSFilters();
+            }
+          }).catch(() => {});
+        }
+      }
+    } else {
+      this.options.blackBarCrop = null;
+      this.blackBarDetector.clearManualCrop();
+      sessionStorage.removeItem('blackBarCrop');
+    }
+
+    this.updateCSSFilters();
+  }
+
+  setManualBlackBarCrop(crop) {
+    this.blackBarDetector.setManualCrop(crop);
+    this.options.blackBarCrop = crop;
+    sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
+    this.updateCSSFilters();
+  }
+
+  resetBlackBarCrop() {
+    this.blackBarDetector.clearManualCrop();
+    this.options.blackBarCrop = null;
+    sessionStorage.removeItem('blackBarCrop');
+
+    if (this.options.removeBlackBars && this.player) {
+      const video = this.player.getVideo();
+      if (video) {
+        this.blackBarDetector.detect(video).then((crop) => {
+          if (crop) {
+            this.options.blackBarCrop = crop;
+            sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
+          }
+          this.updateCSSFilters();
+        }).catch(() => {});
+        return;
+      }
+    }
+
+    this.updateCSSFilters();
   }
 
   /**
