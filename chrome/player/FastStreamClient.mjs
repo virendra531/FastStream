@@ -865,6 +865,13 @@ export class FastStreamClient extends EventEmitter {
       await this.resetPlayer();
       this.source = source;
 
+      if (this.options.removeBlackBars) {
+        this.blackBarDetector.lastDetected = null;
+        if (!this.blackBarDetector.manualCrop) {
+          this.options.blackBarCrop = null;
+        }
+      }
+
       if (source.defaultLevelInfo?.level !== undefined) {
         this.getLevelManager().setCurrentVideoLevelID(source.defaultLevelInfo.level);
       }
