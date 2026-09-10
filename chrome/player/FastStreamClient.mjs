@@ -452,9 +452,12 @@ export class FastStreamClient extends EventEmitter {
             if (crop) {
               this.options.blackBarCrop = crop;
               sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
-              this.updateCSSFilters();
             }
-          }).catch(() => {});
+            this.updateCSSFilters();
+          }).catch(() => {
+            this.updateCSSFilters();
+          });
+          return;
         }
       }
     } else {
@@ -1479,11 +1482,13 @@ export class FastStreamClient extends EventEmitter {
       if (this.options.removeBlackBars && !this.options.blackBarCrop) {
         const video = this.player.getVideo();
         if (video) {
-          const crop = await this.blackBarDetector.detect(video);
-          if (crop) {
-            this.options.blackBarCrop = crop;
-            this.updateCSSFilters();
-          }
+          try {
+            const crop = await this.blackBarDetector.detect(video);
+            if (crop) {
+              this.options.blackBarCrop = crop;
+              this.updateCSSFilters();
+            }
+          } catch (e) {}
         }
       }
     });
