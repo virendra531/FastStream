@@ -12,6 +12,7 @@ export class BlackBarDetector {
     });
     this.manualCrop = null;
     this.lastDetected = null;
+    this._activeDetectionId = 0;
   }
   async detectFromFrame(video, time) {
     return new Promise((resolve) => {
@@ -25,33 +26,46 @@ export class BlackBarDetector {
   }
   async detect(video) {
     const duration = video.duration;
-    if (!duration || duration <= 0) return null;
+    if (!duration || duration <= 0 || !Number.isFinite(duration)) return null;
     if (video.readyState < 2) return null;
+    const originalTime = video.currentTime;
+    const id = ++this._activeDetectionId;
     let maxTop = 0;
     let maxBottom = 0;
     let maxLeft = 0;
     let maxRight = 0;
-    for (const position of SAMPLE_POSITIONS) {
-      await this.detectFromFrame(video, duration * position);
-      const data = this.extractData(video);
-      if (!data) continue;
-      const top = this.detectTopEdge(data);
-      const bottom = this.detectBottomEdge(data);
-      const left = this.detectLeftEdge(data);
-      const right = this.detectRightEdge(data);
-      if (top > maxTop) maxTop = top;
-      if (bottom > maxBottom) maxBottom = bottom;
-      if (left > maxLeft) maxLeft = left;
-      if (right > maxRight) maxRight = right;
+    try {
+      for (const position of SAMPLE_POSITIONS) {
+        if (id !== this._activeDetectionId) return null;
+        await this.detectFromFrame(video, duration * position);
+        const data = this.extractData(video);
+        if (!data) continue;
+        const top = this.detectTopEdge(data);
+        const bottom = this.detectBottomEdge(data);
+        const left = this.detectLeftEdge(data);
+        const right = this.detectRightEdge(data);
+        if (top > maxTop) maxTop = top;
+        if (bottom > maxBottom) maxBottom = bottom;
+        if (left > maxLeft) maxLeft = left;
+        if (right > maxRight) maxRight = right;
+      }
+      if (id !== this._activeDetectionId) return null;
+      if (maxTop === 0 && maxBottom === 0 && maxLeft === 0 && maxRight === 0) {
+        return null;
+      }
+      if (maxTop > 0.4 || maxBottom > 0.4 || maxLeft > 0.4 || maxRight > 0.4) {
+        return null;
+      }
+      this.lastDetected = {top: maxTop, bottom: maxBottom, left: maxLeft, right: maxRight};
+      return this.lastDetected;
+    } finally {
+      if (Number.isFinite(originalTime) && video.currentTime !== originalTime) {
+        video.currentTime = originalTime;
+      }
     }
-    if (maxTop === 0 && maxBottom === 0 && maxLeft === 0 && maxRight === 0) {
-      return null;
-    }
-    if (maxTop > 0.4 || maxBottom > 0.4 || maxLeft > 0.4 || maxRight > 0.4) {
-      return null;
-    }
-    this.lastDetected = {top: maxTop, bottom: maxBottom, left: maxLeft, right: maxRight};
-    return this.lastDetected;
+  }
+  cancel() {
+    this._activeDetectionId++;
   }
   extractData(video) {
     try {

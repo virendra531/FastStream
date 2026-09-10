@@ -415,6 +415,7 @@ export class FastStreamClient extends EventEmitter {
         }
       }
     } else {
+      this.blackBarDetector.cancel();
       this.options.blackBarCrop = null;
       this.blackBarDetector.clearManualCrop();
       sessionStorage.removeItem('blackBarCrop');
@@ -770,6 +771,7 @@ export class FastStreamClient extends EventEmitter {
       await this.resetPlayer();
       this.source = source;
       if (this.options.removeBlackBars) {
+        this.blackBarDetector.cancel();
         this.blackBarDetector.lastDetected = null;
         if (!this.blackBarDetector.manualCrop) {
           this.options.blackBarCrop = null;
