@@ -15,9 +15,21 @@ export class BlackBarDetector {
     this.lastDetected = null;
   }
 
-  detect(video) {
+  async detectFromFrame(video, time) {
+    return new Promise((resolve) => {
+      video.currentTime = time;
+      const onSeeked = () => {
+        video.removeEventListener('seeked', onSeeked);
+        resolve();
+      };
+      video.addEventListener('seeked', onSeeked);
+    });
+  }
+
+  async detect(video) {
     const duration = video.duration;
     if (!duration || duration <= 0) return null;
+    if (video.readyState < 2) return null;
 
     let maxTop = 0;
     let maxBottom = 0;
@@ -25,7 +37,7 @@ export class BlackBarDetector {
     let maxRight = 0;
 
     for (const position of SAMPLE_POSITIONS) {
-      video.currentTime = duration * position;
+      await this.detectFromFrame(video, duration * position);
 
       const data = this.extractData(video);
       if (!data) continue;
@@ -133,6 +145,7 @@ export class BlackBarDetector {
   }
 
   getCrop() {
-    return this.manualCrop || this.lastDetected || null;
+    const crop = this.manualCrop || this.lastDetected || null;
+    return crop ? {...crop} : null;
   }
 }
