@@ -890,6 +890,9 @@
     "options_video_saturation": {
         "message": "彩度"
     },
+    "options_video_gamma": {
+        "message": "ガンマ"
+    },
     "options_video_grayscale": {
         "message": "グレースケール"
     },

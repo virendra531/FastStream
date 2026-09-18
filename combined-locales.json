@@ -5345,6 +5345,24 @@
         "zh_CN": "饱和度",
         "zh_TW": "飽和度"
     },
+    "options_video_gamma": {
+        "en": "Gamma",
+        "de": "Gamma",
+        "es": "Gamma",
+        "fr": "Gamma",
+        "id": "Gamma",
+        "it": "Gamma",
+        "ja": "ガンマ",
+        "ko": "감마",
+        "ms": "Gamma",
+        "nl": "Gamma",
+        "pl": "Gamma",
+        "pt_BR": "Gamma",
+        "ru": "Гамма",
+        "tr": "Gamma",
+        "zh_CN": "伽马",
+        "zh_TW": "伽瑪"
+    },
     "options_video_grayscale": {
         "en": "Grayscale",
         "de": "Graustufen",

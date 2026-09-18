@@ -890,6 +890,9 @@
     "options_video_saturation": {
         "message": "Saturation"
     },
+    "options_video_gamma": {
+        "message": "Gamma"
+    },
     "options_video_grayscale": {
         "message": "Niveaux de gris"
     },

@@ -890,6 +890,9 @@
     "options_video_saturation": {
         "message": "飽和度"
     },
+    "options_video_gamma": {
+        "message": "伽瑪"
+    },
     "options_video_grayscale": {
         "message": "灰階"
     },

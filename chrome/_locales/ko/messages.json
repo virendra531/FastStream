@@ -890,6 +890,9 @@
     "options_video_saturation": {
         "message": "채도"
     },
+    "options_video_gamma": {
+        "message": "감마"
+    },
     "options_video_grayscale": {
         "message": "그레이스케일"
     },
