@@ -5364,6 +5364,24 @@ const TranslationMap = {
     "饱和度",
     "飽和度"
   ],
+  "options_video_gamma": [
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "ガンマ",
+    "감마",
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "Gamma",
+    "Гамма",
+    "Gamma",
+    "伽马",
+    "伽瑪"
+  ],
   "options_video_grayscale": [
     "Grayscale",
     "Graustufen",

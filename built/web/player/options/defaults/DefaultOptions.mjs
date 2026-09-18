@@ -27,6 +27,7 @@ export const DefaultOptions = {
   videoBrightness: 1,
   videoContrast: 1,
   videoSaturation: 1,
+  videoGamma: 1,
   videoGrayscale: 0,
   videoSepia: 0,
   videoInvert: 0,

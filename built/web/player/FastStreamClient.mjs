@@ -71,6 +71,7 @@ export class FastStreamClient extends EventEmitter {
       videoBrightness: 1,
       videoContrast: 1,
       videoSaturation: 1,
+      videoGamma: 1,
       videoGrayscale: 0,
       videoSepia: 0,
       videoInvert: 0,
@@ -320,6 +321,7 @@ export class FastStreamClient extends EventEmitter {
     this.options.videoBrightness = options.videoBrightness;
     this.options.videoContrast = options.videoContrast;
     this.options.videoSaturation = options.videoSaturation;
+    this.options.videoGamma = options.videoGamma;
     this.options.videoGrayscale = options.videoGrayscale;
     this.options.videoSepia = options.videoSepia;
     this.options.videoInvert = options.videoInvert;
@@ -379,6 +381,19 @@ export class FastStreamClient extends EventEmitter {
       );
       svg.id = 'daltonizer-svg';
       filter.id = `daltonizer-${this.options.videoDaltonizerType}-${this.options.videoDaltonizerStrength}`;
+      svg.style.position = 'absolute';
+      svg.style.width = '0px';
+      svg.style.height = '0px';
+      DOMElements.playerContainer.appendChild(svg);
+    }
+    const gammaPrevious = document.getElementById('video-gamma-svg');
+    if (gammaPrevious) {
+      gammaPrevious.remove();
+    }
+    if (this.options.videoGamma !== 1) {
+      const {svg, filter} = CSSFilterUtils.makeGammaFilter(this.options.videoGamma);
+      svg.id = 'video-gamma-svg';
+      filter.id = 'video-gamma-filter';
       svg.style.position = 'absolute';
       svg.style.width = '0px';
       svg.style.height = '0px';
