@@ -75,6 +75,7 @@ export class FastStreamClient extends EventEmitter {
       videoBrightness: 1,
       videoContrast: 1,
       videoSaturation: 1,
+      videoGamma: 1,
       videoGrayscale: 0,
       videoSepia: 0,
       videoInvert: 0,
@@ -349,6 +350,7 @@ export class FastStreamClient extends EventEmitter {
     this.options.videoBrightness = options.videoBrightness;
     this.options.videoContrast = options.videoContrast;
     this.options.videoSaturation = options.videoSaturation;
+    this.options.videoGamma = options.videoGamma;
     this.options.videoGrayscale = options.videoGrayscale;
     this.options.videoSepia = options.videoSepia;
     this.options.videoInvert = options.videoInvert;
