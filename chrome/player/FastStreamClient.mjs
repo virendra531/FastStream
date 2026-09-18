@@ -428,6 +428,21 @@ export class FastStreamClient extends EventEmitter {
       DOMElements.playerContainer.appendChild(svg);
     }
 
+    const gammaPrevious = document.getElementById('video-gamma-svg');
+    if (gammaPrevious) {
+      gammaPrevious.remove();
+    }
+
+    if (this.options.videoGamma !== 1) {
+      const {svg, filter} = CSSFilterUtils.makeGammaFilter(this.options.videoGamma);
+      svg.id = 'video-gamma-svg';
+      filter.id = 'video-gamma-filter';
+      svg.style.position = 'absolute';
+      svg.style.width = '0px';
+      svg.style.height = '0px';
+      DOMElements.playerContainer.appendChild(svg);
+    }
+
     const filterStr = CSSFilterUtils.getFilterString(this.options);
     const transformStr = CSSFilterUtils.getTransformString(this.options);
 
