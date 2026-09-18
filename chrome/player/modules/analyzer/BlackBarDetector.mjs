@@ -1,7 +1,10 @@
+import {DefaultPlayerEvents} from '../../enums/DefaultPlayerEvents.mjs';
+
 const CANVAS_WIDTH = 160;
 const CANVAS_HEIGHT = 90;
 const BRIGHTNESS_THRESHOLD = 15;
 const SAMPLE_POSITIONS = [0.1, 0.25, 0.5, 0.75, 0.9];
+const META_LOAD_TIMEOUT = 15000;
 
 export class BlackBarDetector {
   constructor() {
@@ -14,53 +17,61 @@ export class BlackBarDetector {
     this.manualCrop = null;
     this.lastDetected = null;
     this._activeDetectionId = 0;
+    this._activePlayer = null;
   }
 
-  async detectFromFrame(video, time) {
-    return new Promise((resolve) => {
-      video.currentTime = time;
-      const onSeeked = () => {
-        video.removeEventListener('seeked', onSeeked);
-        resolve();
-      };
-      video.addEventListener('seeked', onSeeked);
-    });
-  }
+  async detect(client) {
+    const player = client?.player;
+    const source = player?.getSource();
+    if (!client?.playerLoader || !source) {
+      return null;
+    }
 
-  async detect(video) {
-    const duration = video.duration;
-    if (!duration || duration <= 0 || !Number.isFinite(duration)) return null;
-    if (video.readyState < 2) return null;
-
-    const originalTime = video.currentTime;
     const id = ++this._activeDetectionId;
+    this.destroyActivePlayer();
 
-    let maxTop = 0;
-    let maxBottom = 0;
-    let maxLeft = 0;
-    let maxRight = 0;
-
+    let analyzerPlayer = null;
     try {
+      analyzerPlayer = await this.loadAnalyzerPlayer(client, source);
+      if (id !== this._activeDetectionId) {
+        return null;
+      }
+
+      const video = analyzerPlayer.getVideo();
+      if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
+        return null;
+      }
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        return null;
+      }
+
+      const duration = video.duration;
+      let maxTop = 0;
+      let maxBottom = 0;
+      let maxLeft = 0;
+      let maxRight = 0;
+
       for (const position of SAMPLE_POSITIONS) {
-        if (id !== this._activeDetectionId) return null;
+        if (id !== this._activeDetectionId) {
+          return null;
+        }
 
         await this.detectFromFrame(video, duration * position);
 
         const data = this.extractData(video);
-        if (!data) continue;
+        if (!data) {
+          continue;
+        }
 
-        const top = this.detectTopEdge(data);
-        const bottom = this.detectBottomEdge(data);
-        const left = this.detectLeftEdge(data);
-        const right = this.detectRightEdge(data);
-
-        if (top > maxTop) maxTop = top;
-        if (bottom > maxBottom) maxBottom = bottom;
-        if (left > maxLeft) maxLeft = left;
-        if (right > maxRight) maxRight = right;
+        maxTop = Math.max(maxTop, this.detectTopEdge(data));
+        maxBottom = Math.max(maxBottom, this.detectBottomEdge(data));
+        maxLeft = Math.max(maxLeft, this.detectLeftEdge(data));
+        maxRight = Math.max(maxRight, this.detectRightEdge(data));
       }
 
-      if (id !== this._activeDetectionId) return null;
+      if (id !== this._activeDetectionId) {
+        return null;
+      }
 
       if (maxTop === 0 && maxBottom === 0 && maxLeft === 0 && maxRight === 0) {
         return null;
@@ -73,14 +84,87 @@ export class BlackBarDetector {
       this.lastDetected = {top: maxTop, bottom: maxBottom, left: maxLeft, right: maxRight};
       return this.lastDetected;
     } finally {
-      if (Number.isFinite(originalTime) && video.currentTime !== originalTime) {
-        video.currentTime = originalTime;
+      if (this._activePlayer === analyzerPlayer) {
+        this._activePlayer = null;
       }
+      analyzerPlayer?.destroy?.();
+    }
+  }
+
+  async loadAnalyzerPlayer(client, source) {
+    const player = await client.playerLoader.createPlayer(source.mode, client, {
+      isAnalyzer: true,
+    });
+    this._activePlayer = player;
+
+    await player.setup();
+
+    player.volume = 0;
+    player.muted = true;
+
+    player.on(DefaultPlayerEvents.MANIFEST_PARSED, () => {
+      player.setCurrentVideoLevelID?.(client.getCurrentVideoLevelID?.());
+      player.setCurrentAudioLevelID?.(client.getCurrentAudioLevelID?.());
+    });
+
+    const meta = this.waitForMetadata(player);
+    client.attachProcessorsToPlayer?.(player);
+
+    await player.setSource(source);
+    await meta;
+
+    player.pause?.();
+
+    return player;
+  }
+
+  waitForMetadata(player) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        player.off?.(DefaultPlayerEvents.LOADEDMETADATA, onMeta);
+        player.off?.(DefaultPlayerEvents.ERROR, onFail);
+        player.off?.(DefaultPlayerEvents.DESTROYED, onFail);
+        resolve();
+      };
+      const onMeta = () => finish();
+      const onFail = () => finish();
+      const timer = setTimeout(finish, META_LOAD_TIMEOUT);
+      player.on?.(DefaultPlayerEvents.LOADEDMETADATA, onMeta);
+      player.on?.(DefaultPlayerEvents.ERROR, onFail);
+      player.on?.(DefaultPlayerEvents.DESTROYED, onFail);
+    });
+  }
+
+  destroyActivePlayer() {
+    if (this._activePlayer) {
+      this._activePlayer.destroy?.();
+      this._activePlayer = null;
     }
   }
 
   cancel() {
     this._activeDetectionId++;
+    this.destroyActivePlayer();
+  }
+
+  async detectFromFrame(video, time) {
+    if (video.currentTime === time) {
+      return;
+    }
+    video.currentTime = time;
+    await new Promise((resolve) => {
+      const onSeeked = () => {
+        video.removeEventListener('seeked', onSeeked);
+        resolve();
+      };
+      video.addEventListener('seeked', onSeeked);
+    });
   }
 
   extractData(video) {
