@@ -52,7 +52,7 @@ export class CSSFilterUtils {
       }
 
       if (options.videoGamma !== 1) {
-        filters.push(`url(#video-gamma-filter)`);
+        filters.push(`url(#video-gamma-${options.videoGamma})`);
       }
     }
 

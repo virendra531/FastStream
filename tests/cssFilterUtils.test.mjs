@@ -32,7 +32,12 @@ test('gamma url appended at end when videoGamma is not 1', () => {
   }));
   assert.match(str, /brightness\(1\.2\)/);
   assert.match(str, /hue-rotate\(90deg\)/);
-  assert.ok(str.endsWith('url(#video-gamma-filter)'));
+  assert.ok(str.endsWith('url(#video-gamma-2)'));
+});
+
+test('gamma url embeds the value', () => {
+  const str = CSSFilterUtils.getFilterString(baseOptions({videoGamma: 1.5}));
+  assert.strictEqual(str, 'url(#video-gamma-1.5)');
 });
 
 test('no filters at all when disableVisualFilters is true', () => {
