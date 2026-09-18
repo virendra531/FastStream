@@ -50,6 +50,10 @@ export class CSSFilterUtils {
       if (options.videoHueRotate !== 0) {
         filters.push(`hue-rotate(${options.videoHueRotate}deg)`);
       }
+
+      if (options.videoGamma !== 1) {
+        filters.push(`url(#video-gamma-filter)`);
+      }
     }
 
     return filters.join(' ');
@@ -63,6 +67,15 @@ export class CSSFilterUtils {
    */
   static makeLMSDaltonizerFilter(type, strength) {
     return SVGDaltonizer.makeLMSDaltonizerFilter(DaltonizerTypeMap.get(type), strength, true);
+  }
+
+  /**
+   * Creates an SVG gamma correction filter.
+   * @param {number} gamma - Gamma value (1 = neutral, >1 brightens, <1 darkens).
+   * @return {{svg: SVGElement, filter: SVGFilterElement}} The SVG and filter elements.
+   */
+  static makeGammaFilter(gamma) {
+    return SVGDaltonizer.makeGammaFilter(gamma);
   }
 
   /**

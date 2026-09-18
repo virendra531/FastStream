@@ -508,4 +508,29 @@ export class SVGDaltonizer {
       filter,
     };
   }
+
+  /**
+   * Generates an SVG filter for gamma correction.
+   * @param {number} gamma - Gamma value. 1 is neutral; >1 brightens, <1 darkens.
+   * @return {SVGFilterResult} An object containing the SVG and filter elements.
+   */
+  static makeGammaFilter(gamma) {
+    const {svg, filter} = SVGUtils.makeSVGFilter();
+    const transfer = document.createElementNS(SVGStandard, 'feComponentTransfer');
+    const exponent = 1 / gamma;
+    for (const channel of ['R', 'G', 'B']) {
+      const func = document.createElementNS(SVGStandard, `feFunc${channel}`);
+      func.setAttribute('type', 'gamma');
+      func.setAttribute('amplitude', '1');
+      func.setAttribute('exponent', '' + exponent);
+      func.setAttribute('offset', '0');
+      transfer.appendChild(func);
+    }
+    filter.appendChild(transfer);
+
+    return {
+      svg,
+      filter,
+    };
+  }
 }
