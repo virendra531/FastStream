@@ -415,19 +415,16 @@ export class FastStreamClient extends EventEmitter {
     sessionStorage.setItem('removeBlackBars', this.options.removeBlackBars);
     if (this.options.removeBlackBars) {
       if (!this.options.blackBarCrop && this.player) {
-        const video = this.player.getVideo();
-        if (video) {
-          this.blackBarDetector.detect(video).then((crop) => {
-            if (crop) {
-              this.options.blackBarCrop = crop;
-              sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
-            }
-            this.updateCSSFilters();
-          }).catch(() => {
-            this.updateCSSFilters();
-          });
-          return;
-        }
+        this.blackBarDetector.detect(this).then((crop) => {
+          if (crop) {
+            this.options.blackBarCrop = crop;
+            sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
+          }
+          this.updateCSSFilters();
+        }).catch(() => {
+          this.updateCSSFilters();
+        });
+        return;
       }
     } else {
       this.blackBarDetector.cancel();
@@ -448,17 +445,14 @@ export class FastStreamClient extends EventEmitter {
     this.options.blackBarCrop = null;
     sessionStorage.removeItem('blackBarCrop');
     if (this.options.removeBlackBars && this.player) {
-      const video = this.player.getVideo();
-      if (video) {
-        this.blackBarDetector.detect(video).then((crop) => {
-          if (crop) {
-            this.options.blackBarCrop = crop;
-            sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
-          }
-          this.updateCSSFilters();
-        }).catch(() => {});
-        return;
-      }
+      this.blackBarDetector.detect(this).then((crop) => {
+        if (crop) {
+          this.options.blackBarCrop = crop;
+          sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
+        }
+        this.updateCSSFilters();
+      }).catch(() => {});
+      return;
     }
     this.updateCSSFilters();
   }
@@ -1286,16 +1280,13 @@ export class FastStreamClient extends EventEmitter {
     this.context.on(DefaultPlayerEvents.LOADEDMETADATA, async (event) => {
       this.interfaceController.updateQualityLevels();
       if (this.options.removeBlackBars && !this.options.blackBarCrop) {
-        const video = this.player.getVideo();
-        if (video) {
-          try {
-            const crop = await this.blackBarDetector.detect(video);
-            if (crop) {
-              this.options.blackBarCrop = crop;
-              this.updateCSSFilters();
-            }
-          } catch (e) {}
-        }
+        try {
+          const crop = await this.blackBarDetector.detect(this);
+          if (crop) {
+            this.options.blackBarCrop = crop;
+            this.updateCSSFilters();
+          }
+        } catch (e) {}
       }
     });
     this.context.on(DefaultPlayerEvents.PAUSE, (event) => {
