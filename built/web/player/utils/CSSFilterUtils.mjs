@@ -42,7 +42,7 @@ export class CSSFilterUtils {
         filters.push(`hue-rotate(${options.videoHueRotate}deg)`);
       }
       if (options.videoGamma !== 1) {
-        filters.push(`url(#video-gamma-filter)`);
+        filters.push(`url(#video-gamma-${options.videoGamma})`);
       }
     }
     return filters.join(' ');

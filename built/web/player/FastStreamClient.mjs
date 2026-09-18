@@ -393,7 +393,7 @@ export class FastStreamClient extends EventEmitter {
     if (this.options.videoGamma !== 1) {
       const {svg, filter} = CSSFilterUtils.makeGammaFilter(this.options.videoGamma);
       svg.id = 'video-gamma-svg';
-      filter.id = 'video-gamma-filter';
+      filter.id = `video-gamma-${this.options.videoGamma}`;
       svg.style.position = 'absolute';
       svg.style.width = '0px';
       svg.style.height = '0px';
