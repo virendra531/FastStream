@@ -45,6 +45,11 @@ function installCanvasStub(frameDataFactory) {
   };
 }
 
+function frameSequence(frames) {
+  let index = 0;
+  return () => frames[Math.min(index++, frames.length - 1)];
+}
+
 function makeAnalyzerPlayer(frameDataFactory, {duration = 100} = {}) {
   const seekHistory = [];
   const video = {
@@ -174,4 +179,42 @@ test('detect returns null when the analyzer video has no valid duration', async 
   const crop = await detector.detect(client);
 
   assert.strictEqual(crop, null);
+});
+
+test('detect ignores one dark frame instead of merging its bar into the other frames', async () => {
+  const frames = [
+    makeFrameData(30 / 90, 0),
+    makeFrameData(8 / 90, 8 / 90),
+    makeFrameData(8 / 90, 8 / 90),
+    makeFrameData(8 / 90, 8 / 90),
+    makeFrameData(8 / 90, 8 / 90),
+  ];
+  installCanvasStub(frameSequence(frames));
+  const client = makeClient(makeAnalyzerPlayer(() => frames[0]));
+
+  const detector = new BlackBarDetector();
+  const crop = await detector.detect(client);
+
+  assert.deepStrictEqual(crop, {top: 8 / 90, bottom: 8 / 90, left: 0, right: 0});
+});
+
+test('detect returns a crop that actually occurred in a sampled frame', async () => {
+  const frames = [
+    makeFrameData(4 / 90, 4 / 90),
+    makeFrameData(10 / 90, 10 / 90),
+    makeFrameData(4 / 90, 4 / 90),
+    makeFrameData(10 / 90, 10 / 90),
+    makeFrameData(4 / 90, 4 / 90),
+  ];
+  installCanvasStub(frameSequence(frames));
+  const client = makeClient(makeAnalyzerPlayer(() => frames[0]));
+
+  const detector = new BlackBarDetector();
+  const crop = await detector.detect(client);
+
+  const perFrame = new Set([
+    JSON.stringify({top: 4 / 90, bottom: 4 / 90, left: 0, right: 0}),
+    JSON.stringify({top: 10 / 90, bottom: 10 / 90, left: 0, right: 0}),
+  ]);
+  assert.ok(perFrame.has(JSON.stringify(crop)), `crop ${JSON.stringify(crop)} came from no sampled frame`);
 });
