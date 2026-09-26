@@ -401,9 +401,20 @@ export class FastStreamClient extends EventEmitter {
     }
     const filterStr = CSSFilterUtils.getFilterString(this.options);
     const transformStr = CSSFilterUtils.getTransformString(this.options);
+    console.warn('[blackBars] updateCSSFilters', {
+      removeBlackBars: this.options.removeBlackBars,
+      blackBarCrop: this.options.blackBarCrop,
+      transformStr,
+      hasPlayer: !!this.player,
+    });
     if (this.player) {
-      this.player.getVideo().style.filter = filterStr;
-      this.player.getVideo().style.transform = transformStr;
+      const video = this.player.getVideo();
+      console.warn('[blackBars] applying to video', {
+        isConnected: video?.isConnected,
+        previousTransform: video?.style.transform,
+      });
+      video.style.filter = filterStr;
+      video.style.transform = transformStr;
     }
     if (this.previewPlayer) {
       this.previewPlayer.getVideo().style.filter = filterStr;
@@ -413,15 +424,23 @@ export class FastStreamClient extends EventEmitter {
   toggleRemoveBlackBars() {
     this.options.removeBlackBars = !this.options.removeBlackBars;
     sessionStorage.setItem('removeBlackBars', this.options.removeBlackBars);
+    console.warn('[blackBars] toggle', {
+      removeBlackBars: this.options.removeBlackBars,
+      blackBarCrop: this.options.blackBarCrop,
+      hasPlayer: !!this.player,
+      willDetect: this.options.removeBlackBars && !this.options.blackBarCrop && !!this.player,
+    });
     if (this.options.removeBlackBars) {
       if (!this.options.blackBarCrop && this.player) {
         this.blackBarDetector.detect(this).then((crop) => {
+          console.warn('[blackBars] detect resolved', {crop});
           if (crop) {
             this.options.blackBarCrop = crop;
             sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
           }
           this.updateCSSFilters();
-        }).catch(() => {
+        }).catch((e) => {
+          console.warn('[blackBars] detect threw', e);
           this.updateCSSFilters();
         });
         return;
