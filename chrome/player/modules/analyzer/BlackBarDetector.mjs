@@ -5,6 +5,8 @@ const CANVAS_HEIGHT = 90;
 const BRIGHTNESS_THRESHOLD = 15;
 const SAMPLE_POSITIONS = [0.1, 0.25, 0.5, 0.75, 0.9];
 const META_LOAD_TIMEOUT = 15000;
+const SEEK_TIMEOUT = 5000;
+const LOG_PREFIX = '[blackBarDetector]';
 
 export class BlackBarDetector {
   constructor() {
@@ -24,8 +26,11 @@ export class BlackBarDetector {
     const player = client?.player;
     const source = player?.getSource();
     if (!client?.playerLoader || !source) {
+      console.warn(`${LOG_PREFIX} no playerLoader or source, cannot detect`);
       return null;
     }
+
+    console.warn(`${LOG_PREFIX} detecting on mode=${source.mode}`);
 
     const id = ++this._activeDetectionId;
     this.destroyActivePlayer();
@@ -34,14 +39,24 @@ export class BlackBarDetector {
     try {
       analyzerPlayer = await this.loadAnalyzerPlayer(client, source);
       if (id !== this._activeDetectionId) {
+        console.warn(`${LOG_PREFIX} detection cancelled while loading`);
         return null;
       }
 
       const video = analyzerPlayer.getVideo();
+      console.warn(`${LOG_PREFIX} analyzer video`, {
+        hasVideo: !!video,
+        duration: video?.duration,
+        videoWidth: video?.videoWidth,
+        videoHeight: video?.videoHeight,
+        readyState: video?.readyState,
+      });
       if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
+        console.warn(`${LOG_PREFIX} analyzer video has no usable duration`);
         return null;
       }
       if (video.videoWidth === 0 || video.videoHeight === 0) {
+        console.warn(`${LOG_PREFIX} analyzer video has no frame size yet`);
         return null;
       }
 
@@ -60,12 +75,14 @@ export class BlackBarDetector {
           continue;
         }
 
-        crops.push({
+        const crop = {
           top: this.detectTopEdge(data),
           bottom: this.detectBottomEdge(data),
           left: this.detectLeftEdge(data),
           right: this.detectRightEdge(data),
-        });
+        };
+        console.warn(`${LOG_PREFIX} frame at ${position} ->`, crop);
+        crops.push(crop);
       }
 
       if (id !== this._activeDetectionId) {
@@ -73,16 +90,20 @@ export class BlackBarDetector {
       }
 
       if (crops.length === 0) {
+        console.warn(`${LOG_PREFIX} no frame could be read, giving up`);
         return null;
       }
 
       const crop = this.aggregateCrops(crops);
+      console.warn(`${LOG_PREFIX} aggregated crop`, crop);
 
       if (crop.top === 0 && crop.bottom === 0 && crop.left === 0 && crop.right === 0) {
+        console.warn(`${LOG_PREFIX} no black bars found`);
         return null;
       }
 
       if (crop.top > 0.4 || crop.bottom > 0.4 || crop.left > 0.4 || crop.right > 0.4) {
+        console.warn(`${LOG_PREFIX} crop too large, ignoring`);
         return null;
       }
 
@@ -164,10 +185,21 @@ export class BlackBarDetector {
     }
     video.currentTime = time;
     await new Promise((resolve) => {
-      const onSeeked = () => {
+      let settled = false;
+      const finish = (reason) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
         video.removeEventListener('seeked', onSeeked);
+        if (reason === 'timeout') {
+          console.warn(`${LOG_PREFIX} seek to ${time} timed out`);
+        }
         resolve();
       };
+      const onSeeked = () => finish('seeked');
+      const timer = setTimeout(() => finish('timeout'), SEEK_TIMEOUT);
       video.addEventListener('seeked', onSeeked);
     });
   }
@@ -177,6 +209,7 @@ export class BlackBarDetector {
       this.ctx.drawImage(video, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       return this.ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     } catch (e) {
+      console.warn(`${LOG_PREFIX} could not read pixels from the analyzer frame`, e);
       return null;
     }
   }
