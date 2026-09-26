@@ -310,14 +310,6 @@ export class FastStreamClient extends EventEmitter {
     if (sessionStorage.getItem('removeBlackBars') === 'true') {
       this.options.removeBlackBars = true;
     }
-    const savedCrop = sessionStorage.getItem('blackBarCrop');
-    if (savedCrop) {
-      try {
-        this.options.blackBarCrop = JSON.parse(savedCrop);
-      } catch (e) {
-        // ignore
-      }
-    }
     this.options.videoBrightness = options.videoBrightness;
     this.options.videoContrast = options.videoContrast;
     this.options.videoSaturation = options.videoSaturation;
@@ -401,18 +393,8 @@ export class FastStreamClient extends EventEmitter {
     }
     const filterStr = CSSFilterUtils.getFilterString(this.options);
     const transformStr = CSSFilterUtils.getTransformString(this.options);
-    console.warn('[blackBars] updateCSSFilters', {
-      removeBlackBars: this.options.removeBlackBars,
-      blackBarCrop: this.options.blackBarCrop,
-      transformStr,
-      hasPlayer: !!this.player,
-    });
     if (this.player) {
       const video = this.player.getVideo();
-      console.warn('[blackBars] applying to video', {
-        isConnected: video?.isConnected,
-        previousTransform: video?.style.transform,
-      });
       video.style.filter = filterStr;
       video.style.transform = transformStr;
     }
@@ -424,23 +406,14 @@ export class FastStreamClient extends EventEmitter {
   toggleRemoveBlackBars() {
     this.options.removeBlackBars = !this.options.removeBlackBars;
     sessionStorage.setItem('removeBlackBars', this.options.removeBlackBars);
-    console.warn('[blackBars] toggle', {
-      removeBlackBars: this.options.removeBlackBars,
-      blackBarCrop: this.options.blackBarCrop,
-      hasPlayer: !!this.player,
-      willDetect: this.options.removeBlackBars && !this.options.blackBarCrop && !!this.player,
-    });
     if (this.options.removeBlackBars) {
       if (!this.options.blackBarCrop && this.player) {
         this.blackBarDetector.detect(this).then((crop) => {
-          console.warn('[blackBars] detect resolved', {crop});
           if (crop) {
             this.options.blackBarCrop = crop;
-            sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
           }
           this.updateCSSFilters();
-        }).catch((e) => {
-          console.warn('[blackBars] detect threw', e);
+        }).catch(() => {
           this.updateCSSFilters();
         });
         return;
@@ -449,25 +422,21 @@ export class FastStreamClient extends EventEmitter {
       this.blackBarDetector.cancel();
       this.options.blackBarCrop = null;
       this.blackBarDetector.clearManualCrop();
-      sessionStorage.removeItem('blackBarCrop');
     }
     this.updateCSSFilters();
   }
   setManualBlackBarCrop(crop) {
     this.blackBarDetector.setManualCrop(crop);
     this.options.blackBarCrop = crop;
-    sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
     this.updateCSSFilters();
   }
   resetBlackBarCrop() {
     this.blackBarDetector.clearManualCrop();
     this.options.blackBarCrop = null;
-    sessionStorage.removeItem('blackBarCrop');
     if (this.options.removeBlackBars && this.player) {
       this.blackBarDetector.detect(this).then((crop) => {
         if (crop) {
           this.options.blackBarCrop = crop;
-          sessionStorage.setItem('blackBarCrop', JSON.stringify(crop));
         }
         this.updateCSSFilters();
       }).catch(() => {});
@@ -798,12 +767,12 @@ export class FastStreamClient extends EventEmitter {
       console.log('setSource', source);
       await this.resetPlayer();
       this.source = source;
-      if (this.options.removeBlackBars) {
-        this.blackBarDetector.cancel();
-        this.blackBarDetector.lastDetected = null;
-        if (!this.blackBarDetector.manualCrop) {
-          this.options.blackBarCrop = null;
-        }
+      // A crop belongs to one video. Drop it on every source change so it can
+      // never be carried over to a different video, and re-detect instead.
+      this.blackBarDetector.cancel();
+      this.blackBarDetector.lastDetected = null;
+      if (!this.blackBarDetector.manualCrop) {
+        this.options.blackBarCrop = null;
       }
       if (source.defaultLevelInfo?.level !== undefined) {
         this.getLevelManager().setCurrentVideoLevelID(source.defaultLevelInfo.level);

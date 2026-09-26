@@ -50,110 +50,76 @@ function frameSequence(frames) {
   return () => frames[Math.min(index++, frames.length - 1)];
 }
 
-function makeAnalyzerPlayer(frameDataFactory, {duration = 100} = {}) {
-  const seekHistory = [];
-  const video = {
-    duration,
-    videoWidth: 160,
-    videoHeight: 90,
-    _currentTime: 0,
-    _seekedListeners: [],
-    get currentTime() {
-      return this._currentTime;
-    },
-    set currentTime(value) {
-      if (value === this._currentTime) {
-        return;
-      }
-      this._currentTime = value;
-      seekHistory.push(value);
-      queueMicrotask(() => {
-        for (const listener of this._seekedListeners.slice()) {
-          listener();
-        }
-      });
-    },
-    addEventListener(type, listener) {
+/**
+ * The detector reads the live player video, so the harness only needs an
+ * element that reports a frame size and can never be seeked.
+ */
+function makeLiveVideo({readyState = 4} = {}) {
+  return {
+    videoWidth: WIDTH,
+    videoHeight: HEIGHT,
+    readyState,
+    duration: 100,
+    currentTime: 42,
+    seekedCount: 0,
+    addEventListener(type) {
       if (type === 'seeked') {
-        this._seekedListeners.push(listener);
+        this.seekedCount++;
       }
     },
-    removeEventListener(type, listener) {
-      if (type === 'seeked') {
-        this._seekedListeners = this._seekedListeners.filter((l) => l !== listener);
-      }
-    },
+    removeEventListener() {},
   };
-
-  const handlers = Object.create(null);
-  const player = {
-    video,
-    seekHistory,
-    volume: 1,
-    muted: false,
-    destroyed: false,
-    setup: async () => {},
-    on(type, listener) {
-      (handlers[type] ??= []).push(listener);
-      return this;
-    },
-    off(type, listener) {
-      if (handlers[type]) {
-        handlers[type] = handlers[type].filter((l) => l !== listener);
-      }
-    },
-    emit(type) {
-      for (const listener of (handlers[type] ?? []).slice()) {
-        listener({type});
-      }
-    },
-    setCurrentVideoLevelID() {},
-    setCurrentAudioLevelID() {},
-    async setSource() {
-      this.emit('loadedmetadata');
-    },
-    pause() {},
-    destroy() {
-      this.destroyed = true;
-    },
-    getVideo() {
-      return video;
-    },
-  };
-
-  return player;
 }
 
-function makeClient(analyzerPlayer) {
+function makeClient(video) {
   return {
     player: {
+      getVideo: () => video,
       getSource: () => ({mode: 'direct'}),
     },
-    playerLoader: {
-      createPlayer: async () => analyzerPlayer,
-    },
-    attachProcessorsToPlayer: () => {},
-    getCurrentVideoLevelID: () => null,
-    getCurrentAudioLevelID: () => null,
   };
 }
 
-test('detect samples a detached analyzer player and returns the aggregated crop', async () => {
+test('detect reads the live video and returns the crop', async () => {
   installCanvasStub(() => makeFrameData(18 / 90, 14 / 90));
-  const analyzerPlayer = makeAnalyzerPlayer(() => makeFrameData(18 / 90, 14 / 90));
-  const client = makeClient(analyzerPlayer);
+  const client = makeClient(makeLiveVideo());
 
   const detector = new BlackBarDetector();
   const crop = await detector.detect(client);
 
   assert.deepStrictEqual(crop, {top: 18 / 90, bottom: 14 / 90, left: 0, right: 0});
-  assert.deepStrictEqual(analyzerPlayer.seekHistory, [10, 25, 50, 75, 90]);
-  assert.strictEqual(analyzerPlayer.destroyed, true);
+});
+
+test('detect never seeks the live video', async () => {
+  installCanvasStub(() => makeFrameData(18 / 90, 14 / 90));
+  const video = makeLiveVideo();
+  const client = makeClient(video);
+
+  const detector = new BlackBarDetector();
+  await detector.detect(client);
+
+  assert.strictEqual(video.seekedCount, 0);
+  assert.strictEqual(video.currentTime, 42);
+});
+
+test('detect does not create a second player', async () => {
+  installCanvasStub(() => makeFrameData(18 / 90, 14 / 90));
+  const client = makeClient(makeLiveVideo());
+  client.playerLoader = {
+    createPlayer: async () => {
+      throw new Error('detect must not spin up an analyzer player');
+    },
+  };
+
+  const detector = new BlackBarDetector();
+  const crop = await detector.detect(client);
+
+  assert.deepStrictEqual(crop, {top: 18 / 90, bottom: 14 / 90, left: 0, right: 0});
 });
 
 test('detect returns null when frames contain no black bars', async () => {
   installCanvasStub(() => makeFrameData(0, 0));
-  const client = makeClient(makeAnalyzerPlayer(() => makeFrameData(0, 0)));
+  const client = makeClient(makeLiveVideo());
 
   const detector = new BlackBarDetector();
   const crop = await detector.detect(client);
@@ -163,7 +129,7 @@ test('detect returns null when frames contain no black bars', async () => {
 
 test('detect returns null when any crop edge exceeds 40%', async () => {
   installCanvasStub(() => makeFrameData(45 / 90, 0));
-  const client = makeClient(makeAnalyzerPlayer(() => makeFrameData(45 / 90, 0)));
+  const client = makeClient(makeLiveVideo());
 
   const detector = new BlackBarDetector();
   const crop = await detector.detect(client);
@@ -171,9 +137,10 @@ test('detect returns null when any crop edge exceeds 40%', async () => {
   assert.strictEqual(crop, null);
 });
 
-test('detect returns null when the analyzer video has no valid duration', async () => {
+test('detect returns null when the live video has no frame yet', async () => {
   installCanvasStub(() => makeFrameData(18 / 90, 14 / 90));
-  const client = makeClient(makeAnalyzerPlayer(() => makeFrameData(18 / 90, 14 / 90), {duration: 0}));
+  const client = makeClient(makeLiveVideo({readyState: 0}));
+  client.player.getVideo = () => ({videoWidth: 0, videoHeight: 0, readyState: 0});
 
   const detector = new BlackBarDetector();
   const crop = await detector.detect(client);
@@ -181,7 +148,16 @@ test('detect returns null when the analyzer video has no valid duration', async 
   assert.strictEqual(crop, null);
 });
 
-test('detect ignores one dark frame instead of merging its bar into the other frames', async () => {
+test('detect returns null when there is no live video', async () => {
+  installCanvasStub(() => makeFrameData(18 / 90, 14 / 90));
+
+  const detector = new BlackBarDetector();
+  const crop = await detector.detect({});
+
+  assert.strictEqual(crop, null);
+});
+
+test('detect ignores a single dark frame instead of merging its bar into other frames', async () => {
   const frames = [
     makeFrameData(30 / 90, 0),
     makeFrameData(8 / 90, 8 / 90),
@@ -190,7 +166,7 @@ test('detect ignores one dark frame instead of merging its bar into the other fr
     makeFrameData(8 / 90, 8 / 90),
   ];
   installCanvasStub(frameSequence(frames));
-  const client = makeClient(makeAnalyzerPlayer(() => frames[0]));
+  const client = makeClient(makeLiveVideo());
 
   const detector = new BlackBarDetector();
   const crop = await detector.detect(client);
@@ -207,7 +183,7 @@ test('detect returns a crop that actually occurred in a sampled frame', async ()
     makeFrameData(4 / 90, 4 / 90),
   ];
   installCanvasStub(frameSequence(frames));
-  const client = makeClient(makeAnalyzerPlayer(() => frames[0]));
+  const client = makeClient(makeLiveVideo());
 
   const detector = new BlackBarDetector();
   const crop = await detector.detect(client);
@@ -217,4 +193,30 @@ test('detect returns a crop that actually occurred in a sampled frame', async ()
     JSON.stringify({top: 10 / 90, bottom: 10 / 90, left: 0, right: 0}),
   ]);
   assert.ok(perFrame.has(JSON.stringify(crop)), `crop ${JSON.stringify(crop)} came from no sampled frame`);
+});
+
+test('cancel stops an in-flight detection', async () => {
+  installCanvasStub(() => makeFrameData(18 / 90, 14 / 90));
+  const client = makeClient(makeLiveVideo());
+
+  const detector = new BlackBarDetector();
+  const pending = detector.detect(client);
+  detector.cancel();
+
+  assert.strictEqual(await pending, null);
+});
+
+test('a manual crop is returned without touching the video', async () => {
+  let reads = 0;
+  installCanvasStub(() => {
+    reads++;
+    return makeFrameData(0, 0);
+  });
+  const client = makeClient(makeLiveVideo());
+
+  const detector = new BlackBarDetector();
+  detector.setManualCrop({top: 0.1, bottom: 0.1, left: 0, right: 0});
+
+  assert.deepStrictEqual(await detector.detect(client), {top: 0.1, bottom: 0.1, left: 0, right: 0});
+  assert.strictEqual(reads, 0);
 });

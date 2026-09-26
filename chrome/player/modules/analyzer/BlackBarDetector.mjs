@@ -1,12 +1,13 @@
-import {DefaultPlayerEvents} from '../../enums/DefaultPlayerEvents.mjs';
-
 const CANVAS_WIDTH = 160;
 const CANVAS_HEIGHT = 90;
 const BRIGHTNESS_THRESHOLD = 15;
-const SAMPLE_POSITIONS = [0.1, 0.25, 0.5, 0.75, 0.9];
-const META_LOAD_TIMEOUT = 15000;
-const SEEK_TIMEOUT = 5000;
+const MAX_CROP_RATIO = 0.4;
+const SAMPLE_INTERVAL = 150;
+const SAMPLE_WINDOW = 1200;
+const MIN_SAMPLES = 3;
 const LOG_PREFIX = '[blackBarDetector]';
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class BlackBarDetector {
   constructor() {
@@ -19,189 +20,102 @@ export class BlackBarDetector {
     this.manualCrop = null;
     this.lastDetected = null;
     this._activeDetectionId = 0;
-    this._activePlayer = null;
   }
 
+  /**
+   * Reads black bars off the live video element. Baked-in bars appear in every
+   * frame, so no seek is needed: reading the frame the player is already
+   * showing avoids both visible seeking and a second player contending for the
+   * same fragments.
+   */
   async detect(client) {
-    const player = client?.player;
-    const source = player?.getSource();
-    if (!client?.playerLoader || !source) {
-      console.warn(`${LOG_PREFIX} no playerLoader or source, cannot detect`);
-      return null;
+    const id = ++this._activeDetectionId;
+
+    if (this.manualCrop) {
+      return {...this.manualCrop};
     }
 
-    console.warn(`${LOG_PREFIX} detecting on mode=${source.mode}`);
-
-    const id = ++this._activeDetectionId;
-    this.destroyActivePlayer();
-
-    let analyzerPlayer = null;
-    try {
-      analyzerPlayer = await this.loadAnalyzerPlayer(client, source);
-      if (id !== this._activeDetectionId) {
-        console.warn(`${LOG_PREFIX} detection cancelled while loading`);
-        return null;
-      }
-
-      const video = analyzerPlayer.getVideo();
-      console.warn(`${LOG_PREFIX} analyzer video`, {
-        hasVideo: !!video,
-        duration: video?.duration,
+    const video = client?.player?.getVideo?.();
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      console.log(`${LOG_PREFIX} live video has no frame size yet`, {
         videoWidth: video?.videoWidth,
         videoHeight: video?.videoHeight,
         readyState: video?.readyState,
       });
-      if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
-        console.warn(`${LOG_PREFIX} analyzer video has no usable duration`);
-        return null;
-      }
-      if (video.videoWidth === 0 || video.videoHeight === 0) {
-        console.warn(`${LOG_PREFIX} analyzer video has no frame size yet`);
-        return null;
-      }
+      return null;
+    }
 
-      const duration = video.duration;
-      const crops = [];
+    const crops = [];
+    const deadline = Date.now() + SAMPLE_WINDOW;
 
-      for (const position of SAMPLE_POSITIONS) {
-        if (id !== this._activeDetectionId) {
-          return null;
-        }
-
-        await this.detectFromFrame(video, duration * position);
-
-        const data = this.extractData(video);
-        if (!data) {
-          continue;
-        }
-
-        const crop = {
-          top: this.detectTopEdge(data),
-          bottom: this.detectBottomEdge(data),
-          left: this.detectLeftEdge(data),
-          right: this.detectRightEdge(data),
-        };
-        console.warn(`${LOG_PREFIX} frame at ${position} ->`, crop);
-        crops.push(crop);
-      }
-
+    while (Date.now() < deadline) {
       if (id !== this._activeDetectionId) {
         return null;
       }
 
-      if (crops.length === 0) {
-        console.warn(`${LOG_PREFIX} no frame could be read, giving up`);
-        return null;
-      }
-
-      const crop = this.aggregateCrops(crops);
-      console.warn(`${LOG_PREFIX} aggregated crop`, crop);
-
-      if (crop.top === 0 && crop.bottom === 0 && crop.left === 0 && crop.right === 0) {
-        console.warn(`${LOG_PREFIX} no black bars found`);
-        return null;
-      }
-
-      if (crop.top > 0.4 || crop.bottom > 0.4 || crop.left > 0.4 || crop.right > 0.4) {
-        console.warn(`${LOG_PREFIX} crop too large, ignoring`);
-        return null;
-      }
-
-      this.lastDetected = crop;
-      return this.lastDetected;
-    } finally {
-      if (this._activePlayer === analyzerPlayer) {
-        this._activePlayer = null;
-      }
-      analyzerPlayer?.destroy?.();
-    }
-  }
-
-  async loadAnalyzerPlayer(client, source) {
-    const player = await client.playerLoader.createPlayer(source.mode, client, {
-      isAnalyzer: true,
-    });
-    this._activePlayer = player;
-
-    await player.setup();
-
-    player.volume = 0;
-    player.muted = true;
-
-    player.on(DefaultPlayerEvents.MANIFEST_PARSED, () => {
-      player.setCurrentVideoLevelID?.(client.getCurrentVideoLevelID?.());
-      player.setCurrentAudioLevelID?.(client.getCurrentAudioLevelID?.());
-    });
-
-    const meta = this.waitForMetadata(player);
-    client.attachProcessorsToPlayer?.(player);
-
-    await player.setSource(source);
-    await meta;
-
-    player.pause?.();
-
-    return player;
-  }
-
-  waitForMetadata(player) {
-    return new Promise((resolve) => {
-      let settled = false;
-      const finish = () => {
-        if (settled) {
-          return;
+      // HAVE_CURRENT_DATA: a frame exists at the current position to read.
+      if (video.readyState >= 2) {
+        const data = this.extractData(video);
+        if (data) {
+          crops.push(this.measureCrop(data));
         }
-        settled = true;
-        clearTimeout(timer);
-        player.off?.(DefaultPlayerEvents.LOADEDMETADATA, onMeta);
-        player.off?.(DefaultPlayerEvents.ERROR, onFail);
-        player.off?.(DefaultPlayerEvents.DESTROYED, onFail);
-        resolve();
-      };
-      const onMeta = () => finish();
-      const onFail = () => finish();
-      const timer = setTimeout(finish, META_LOAD_TIMEOUT);
-      player.on?.(DefaultPlayerEvents.LOADEDMETADATA, onMeta);
-      player.on?.(DefaultPlayerEvents.ERROR, onFail);
-      player.on?.(DefaultPlayerEvents.DESTROYED, onFail);
-    });
+      }
+
+      // Keep sampling past the first hit so a single misread frame cannot win:
+      // the aggregate is a median, and one outlier cannot move it.
+      if (crops.length >= MIN_SAMPLES && crops.some((c) => this.isPlausibleCrop(c))) {
+        break;
+      }
+
+      await delay(SAMPLE_INTERVAL);
+
+      if (id !== this._activeDetectionId) {
+        return null;
+      }
+    }
+
+    if (crops.length === 0) {
+      console.log(`${LOG_PREFIX} no frame could be sampled from the live video`);
+      return null;
+    }
+
+    const aggregated = this.aggregateCrops(crops);
+    console.log(`${LOG_PREFIX} aggregated crop`, aggregated);
+
+    if (!this.hasAnyBar(aggregated)) {
+      console.log(`${LOG_PREFIX} no black bars found`);
+      return null;
+    }
+
+    if (!this.isPlausibleCrop(aggregated)) {
+      console.log(`${LOG_PREFIX} crop too large, ignoring`);
+      return null;
+    }
+
+    this.lastDetected = aggregated;
+    return this.lastDetected;
   }
 
-  destroyActivePlayer() {
-    if (this._activePlayer) {
-      this._activePlayer.destroy?.();
-      this._activePlayer = null;
-    }
+  measureCrop(data) {
+    return {
+      top: this.detectTopEdge(data),
+      bottom: this.detectBottomEdge(data),
+      left: this.detectLeftEdge(data),
+      right: this.detectRightEdge(data),
+    };
+  }
+
+  isPlausibleCrop(crop) {
+    return crop.top <= MAX_CROP_RATIO && crop.bottom <= MAX_CROP_RATIO &&
+      crop.left <= MAX_CROP_RATIO && crop.right <= MAX_CROP_RATIO;
+  }
+
+  hasAnyBar(crop) {
+    return crop.top > 0 || crop.bottom > 0 || crop.left > 0 || crop.right > 0;
   }
 
   cancel() {
     this._activeDetectionId++;
-    this.destroyActivePlayer();
-  }
-
-  async detectFromFrame(video, time) {
-    if (video.currentTime === time) {
-      return;
-    }
-    video.currentTime = time;
-    await new Promise((resolve) => {
-      let settled = false;
-      const finish = (reason) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        video.removeEventListener('seeked', onSeeked);
-        if (reason === 'timeout') {
-          console.warn(`${LOG_PREFIX} seek to ${time} timed out`);
-        }
-        resolve();
-      };
-      const onSeeked = () => finish('seeked');
-      const timer = setTimeout(() => finish('timeout'), SEEK_TIMEOUT);
-      video.addEventListener('seeked', onSeeked);
-    });
   }
 
   extractData(video) {
@@ -209,7 +123,7 @@ export class BlackBarDetector {
       this.ctx.drawImage(video, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       return this.ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     } catch (e) {
-      console.warn(`${LOG_PREFIX} could not read pixels from the analyzer frame`, e);
+      console.warn(`${LOG_PREFIX} could not read pixels from the live video`, e);
       return null;
     }
   }
