@@ -6,6 +6,15 @@ DaltonizerTypeMap.set(DaltonizerTypes.PROTANOMALY, 0);
 DaltonizerTypeMap.set(DaltonizerTypes.DEUTERANOMALY, 1);
 DaltonizerTypeMap.set(DaltonizerTypes.TRITANOMALY, 2);
 /**
+ * Trims floating point noise (0.1 + 0.2 - 0.3 style) out of a CSS value so the
+ * generated transform string stays readable.
+ * @param {number} value
+ * @return {number}
+ */
+function round(value) {
+  return Math.round(value * 1e9) / 1e9;
+}
+/**
  * Utility functions for generating CSS filter strings for video effects.
  */
 export class CSSFilterUtils {
@@ -73,11 +82,17 @@ export class CSSFilterUtils {
     const transforms = [];
     if (options.removeBlackBars && options.blackBarCrop) {
       const crop = options.blackBarCrop;
-      const scaleX = 1 / (1 - crop.left - crop.right);
-      const scaleY = 1 / (1 - crop.top - crop.bottom);
-      const translateX = (crop.left - crop.right) * scaleX;
-      const translateY = (crop.top - crop.bottom) * scaleY;
-      transforms.push(`translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`);
+      const contentHeight = 1 - crop.top - crop.bottom;
+      // Vertical only: side bars are detected but deliberately left alone, so the
+      // horizontal axis is never scaled or shifted and no edges get cropped.
+      if (contentHeight > 0) {
+        const scaleY = 1 / contentHeight;
+        // transform-origin is the element centre, so the content rect has to be
+        // shifted back onto it: half the overflow, minus the crop's own offset.
+        const overflowY = (scaleY - 1) / 2;
+        const translateY = (overflowY - crop.top * scaleY) * 100;
+        transforms.push(`translate(0%, ${round(translateY)}%) scale(1, ${scaleY})`);
+      }
     }
     if (options.videoFlip !== 0) {
       transforms.push(`scaleX(${options.videoFlip % 2 === 0 ? options.videoZoom : -options.videoZoom}) scaleY(${options.videoFlip > 1 ? -options.videoZoom : options.videoZoom})`);

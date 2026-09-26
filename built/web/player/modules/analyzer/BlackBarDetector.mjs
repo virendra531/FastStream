@@ -39,10 +39,7 @@ export class BlackBarDetector {
         return null;
       }
       const duration = video.duration;
-      let maxTop = 0;
-      let maxBottom = 0;
-      let maxLeft = 0;
-      let maxRight = 0;
+      const crops = [];
       for (const position of SAMPLE_POSITIONS) {
         if (id !== this._activeDetectionId) {
           return null;
@@ -52,21 +49,27 @@ export class BlackBarDetector {
         if (!data) {
           continue;
         }
-        maxTop = Math.max(maxTop, this.detectTopEdge(data));
-        maxBottom = Math.max(maxBottom, this.detectBottomEdge(data));
-        maxLeft = Math.max(maxLeft, this.detectLeftEdge(data));
-        maxRight = Math.max(maxRight, this.detectRightEdge(data));
+        crops.push({
+          top: this.detectTopEdge(data),
+          bottom: this.detectBottomEdge(data),
+          left: this.detectLeftEdge(data),
+          right: this.detectRightEdge(data),
+        });
       }
       if (id !== this._activeDetectionId) {
         return null;
       }
-      if (maxTop === 0 && maxBottom === 0 && maxLeft === 0 && maxRight === 0) {
+      if (crops.length === 0) {
         return null;
       }
-      if (maxTop > 0.4 || maxBottom > 0.4 || maxLeft > 0.4 || maxRight > 0.4) {
+      const crop = this.aggregateCrops(crops);
+      if (crop.top === 0 && crop.bottom === 0 && crop.left === 0 && crop.right === 0) {
         return null;
       }
-      this.lastDetected = {top: maxTop, bottom: maxBottom, left: maxLeft, right: maxRight};
+      if (crop.top > 0.4 || crop.bottom > 0.4 || crop.left > 0.4 || crop.right > 0.4) {
+        return null;
+      }
+      this.lastDetected = crop;
       return this.lastDetected;
     } finally {
       if (this._activePlayer === analyzerPlayer) {
@@ -202,6 +205,24 @@ export class BlackBarDetector {
       }
     }
     return 1;
+  }
+  aggregateCrops(crops) {
+    if (crops.length === 0) {
+      return {top: 0, bottom: 0, left: 0, right: 0};
+    }
+    const getMedian = (values) => {
+      const sorted = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      if (sorted.length % 2 === 0) {
+        return (sorted[mid - 1] + sorted[mid]) / 2;
+      }
+      return sorted[mid];
+    };
+    const top = getMedian(crops.map((c) => c.top));
+    const bottom = getMedian(crops.map((c) => c.bottom));
+    const left = getMedian(crops.map((c) => c.left));
+    const right = getMedian(crops.map((c) => c.right));
+    return {top, bottom, left, right};
   }
   setManualCrop(crop) {
     this.manualCrop = {...crop};
