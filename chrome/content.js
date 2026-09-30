@@ -713,6 +713,11 @@
 
   function fillScreenIframe(iframe, skipHide = false) {
     const addedElements = [];
+    // max-width/max-height must be reset too. Pages can cap the player box
+    // (KTPlayer styles its own container, and stamps ids/classes onto our
+    // iframe). max-* is independent of width/height, so forcing width does not
+    // defeat a cap: the used size is min(max-width, width). On a viewport
+    // larger than the cap that leaves empty space on the right and bottom.
     const expandStyle =
     `position: fixed !important;
     display: block !important;
@@ -726,6 +731,8 @@
     left: 0px !important;
     width: 100% !important;
     height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
     bottom: 0px !important;
     right: 0px !important;
     pointer-events: auto !important;
