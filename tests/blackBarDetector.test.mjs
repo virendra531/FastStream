@@ -25,6 +25,10 @@ function makeFrameData(topBar, bottomBar) {
 }
 
 function installCanvasStub(frameDataFactory) {
+  const stub = {reads: 0};
+  stub.restore = () => {
+    delete globalThis.document;
+  };
   globalThis.document = {
     createElement: (tag) => {
       if (tag !== 'canvas') {
@@ -34,15 +38,19 @@ function installCanvasStub(frameDataFactory) {
       canvas.getContext = () => ({
         willReadFrequently: true,
         drawImage: () => {},
-        getImageData: (x, y, w, h) => ({
-          width: w,
-          height: h,
-          data: frameDataFactory(),
-        }),
+        getImageData: (x, y, w, h) => {
+          stub.reads++;
+          return {
+            width: w,
+            height: h,
+            data: frameDataFactory(),
+          };
+        },
       });
       return canvas;
     },
   };
+  return stub;
 }
 
 function frameSequence(frames) {
@@ -52,15 +60,22 @@ function frameSequence(frames) {
 
 /**
  * The detector reads the live player video, so the harness only needs an
- * element that reports a frame size and can never be seeked.
+ * element that reports a frame size. `paused` keeps currentTime fixed, which is
+ * how a real paused video behaves.
  */
-function makeLiveVideo({readyState = 4} = {}) {
+function makeLiveVideo({readyState = 4, paused = false} = {}) {
+  let position = 42;
   return {
     videoWidth: WIDTH,
     videoHeight: HEIGHT,
     readyState,
     duration: 100,
-    currentTime: 42,
+    get currentTime() {
+      if (!paused) {
+        position += 0.1;
+      }
+      return position;
+    },
     seekedCount: 0,
     addEventListener(type) {
       if (type === 'seeked') {
@@ -93,13 +108,14 @@ test('detect reads the live video and returns the crop', async () => {
 test('detect never seeks the live video', async () => {
   installCanvasStub(() => makeFrameData(18 / 90, 14 / 90));
   const video = makeLiveVideo();
+  const before = video.currentTime;
   const client = makeClient(video);
 
   const detector = new BlackBarDetector();
   await detector.detect(client);
 
   assert.strictEqual(video.seekedCount, 0);
-  assert.strictEqual(video.currentTime, 42);
+  assert.ok(video.currentTime >= before, 'playback position must be left alone');
 });
 
 test('detect does not create a second player', async () => {
@@ -193,6 +209,27 @@ test('detect returns a crop that actually occurred in a sampled frame', async ()
     JSON.stringify({top: 10 / 90, bottom: 10 / 90, left: 0, right: 0}),
   ]);
   assert.ok(perFrame.has(JSON.stringify(crop)), `crop ${JSON.stringify(crop)} came from no sampled frame`);
+});
+
+test('detect reads a paused frame once instead of re-reading it', async () => {
+  const stub = installCanvasStub(() => makeFrameData(18 / 90, 14 / 90));
+  const client = makeClient(makeLiveVideo({paused: true}));
+
+  const detector = new BlackBarDetector();
+  const crop = await detector.detect(client);
+
+  assert.deepStrictEqual(crop, {top: 18 / 90, bottom: 14 / 90, left: 0, right: 0});
+  assert.strictEqual(stub.reads, 1);
+});
+
+test('detect samples again while the frame is advancing', async () => {
+  const stub = installCanvasStub(() => makeFrameData(18 / 90, 14 / 90));
+  const client = makeClient(makeLiveVideo());
+
+  const detector = new BlackBarDetector();
+  await detector.detect(client);
+
+  assert.ok(stub.reads >= 3, `expected several frames to be sampled, got ${stub.reads}`);
 });
 
 test('cancel stops an in-flight detection', async () => {

@@ -47,24 +47,32 @@ export class BlackBarDetector {
 
     const crops = [];
     const deadline = Date.now() + SAMPLE_WINDOW;
+    let lastFrameKey = null;
 
     while (Date.now() < deadline) {
       if (id !== this._activeDetectionId) {
         return null;
       }
 
-      // HAVE_CURRENT_DATA: a frame exists at the current position to read.
-      if (video.readyState >= 2) {
-        const data = this.extractData(video);
-        if (data) {
-          crops.push(this.measureCrop(data));
-        }
-      }
-
       // Keep sampling past the first hit so a single misread frame cannot win:
       // the aggregate is a median, and one outlier cannot move it.
       if (crops.length >= MIN_SAMPLES && crops.some((c) => this.isPlausibleCrop(c))) {
         break;
+      }
+
+      // HAVE_CURRENT_DATA: a frame exists at the current position to read.
+      if (video.readyState >= 2) {
+        const frameKey = `${video.readyState}:${video.currentTime}`;
+        if (frameKey !== lastFrameKey) {
+          lastFrameKey = frameKey;
+          const data = this.extractData(video);
+          if (data) {
+            crops.push(this.measureCrop(data));
+          }
+        } else if (crops.length && crops.some((c) => this.isPlausibleCrop(c))) {
+          // The frame stopped advancing, so the crop we already have is final.
+          break;
+        }
       }
 
       await delay(SAMPLE_INTERVAL);
