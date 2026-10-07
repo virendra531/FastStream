@@ -1126,6 +1126,9 @@ export class InterfaceController {
       const newValue = force === undefined ? !this.state.windowedFullscreen : force;
       DOMElements.playerContainer.classList.toggle('pseudo_fullscreen', newValue);
       this.state.windowedFullscreen = newValue;
+      if (this.state.windowedFullscreen) {
+        this.hideControlBar();
+      }
       return;
     }
     chrome.runtime.sendMessage({
@@ -1133,6 +1136,9 @@ export class InterfaceController {
       force,
     }, (response) => {
       this.state.windowedFullscreen = response === 'enter';
+      if (this.state.windowedFullscreen) {
+        this.hideControlBar();
+      }
     });
   }
 
@@ -1200,19 +1206,12 @@ export class InterfaceController {
 
   setFullscreenStatus(status) {
     const fullScreenButton = DOMElements.fullscreen;
-    const controlsContainer = DOMElements.controlsContainer;
-    if (status)
-    {
+    if (status) {
       fullScreenButton.classList.add('out');
-      controlsContainer.classList.add('disabled');
       this.state.fullscreen = true;
-    }
-    else
-    {
+    } else {
       fullScreenButton.classList.remove('out');
-      controlsContainer.classList.remove('disabled');
-      if (this.state.fullscreen)
-      {
+      if (this.state.fullscreen) {
         this.state.fullscreen = false;
         this.fullscreenToggle(false);
       }
