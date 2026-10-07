@@ -999,11 +999,20 @@ export class InterfaceController {
   }
   onControlsMouseLeave() {
     this.mouseOverControls = false;
-    if (document.activeElement && DOMElements.controlsContainer.contains(document.activeElement)) document.activeElement.blur();
-    this.queueControlsHide();
+    if (document.activeElement && DOMElements.controlsContainer.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
+    if (this.isFullscreenLike()) {
+      this.hideControlBar();
+    } else {
+      this.queueControlsHide();
+    }
   }
   onPlayerMouseMove() {
     if (Date.now() < this.mouseActivityCooldown) {
+      return;
+    }
+    if (this.isFullscreenLike()) {
       return;
     }
     this.showControlBar();
@@ -1034,6 +1043,12 @@ export class InterfaceController {
 
   isBigPlayButtonVisible() {
     return DOMElements.playPauseButtonBigCircle.style.display !== 'none';
+  }
+
+  isFullscreenLike() {
+    return this.state.fullscreen ||
+           this.state.windowedFullscreen ||
+           DOMElements.playerContainer?.classList.contains('pseudo_fullscreen');
   }
 
   hideControlBar() {
