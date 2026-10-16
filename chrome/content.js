@@ -1541,17 +1541,56 @@
   }, true);
 
 
+  let orientationLockedByPlayer = false;
+
+  function lockPlayerOrientation() {
+    try {
+      const orientation = window.screen?.orientation;
+      if (orientation && typeof orientation.lock === 'function') {
+        orientationLockedByPlayer = true;
+        Promise.resolve(orientation.lock('landscape')).catch(() => {});
+      }
+    } catch (e) {
+      void e;
+    }
+  }
+
+  function unlockPlayerOrientation() {
+    if (!orientationLockedByPlayer) {
+      return;
+    }
+    orientationLockedByPlayer = false;
+    try {
+      const orientation = window.screen?.orientation;
+      if (orientation && typeof orientation.unlock === 'function') {
+        orientation.unlock();
+      }
+    } catch (e) {
+      void e;
+    }
+  }
+
   document.addEventListener('fullscreenchange', () => {
     const changedFor = [];
+    let playerFullscreenActive = false;
     iframeMap.forEach((iframeObj) => {
       const fullscreenState = iframeObj.fullscreenState;
       const element = iframeObj.iframe;
       const active = document.fullscreenElement === element;
+      if (active) {
+        playerFullscreenActive = true;
+      }
       if (active !== fullscreenState.active) {
         fullscreenState.active = active;
         changedFor.push(iframeObj);
       }
     });
+
+    if (playerFullscreenActive) {
+      lockPlayerOrientation();
+    } else {
+      unlockPlayerOrientation();
+    }
 
     changedFor.forEach((iframeObj) => {
       sendToPlayer(iframeObj.fullscreenState.playerFrameId, {

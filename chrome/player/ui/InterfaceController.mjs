@@ -37,6 +37,7 @@ export class InterfaceController {
     this.mouseOverControls = false;
     this.controlsVisible = true;
     this.mouseActivityCooldown = 0;
+    this.orientationLockedByPlayer = false;
 
     this.failed = false;
 
@@ -242,6 +243,7 @@ export class InterfaceController {
 
   dressVideo(video) {
     video.setAttribute('playsinline', 'playsinline');
+    video.setAttribute('webkit-playsinline', 'true');
     video.disableRemotePlayback = true;
   }
 
@@ -1127,7 +1129,10 @@ export class InterfaceController {
       DOMElements.playerContainer.classList.toggle('pseudo_fullscreen', newValue);
       this.state.windowedFullscreen = newValue;
       if (this.state.windowedFullscreen) {
+        this.lockLandscapeOrientation();
         this.hideControlBar();
+      } else {
+        this.unlockOrientationIfIdle();
       }
       return;
     }
@@ -1137,7 +1142,10 @@ export class InterfaceController {
     }, (response) => {
       this.state.windowedFullscreen = response === 'enter';
       if (this.state.windowedFullscreen) {
+        this.lockLandscapeOrientation();
         this.hideControlBar();
+      } else {
+        this.unlockOrientationIfIdle();
       }
     });
   }
@@ -1204,15 +1212,45 @@ export class InterfaceController {
     this.setFullscreenStatus(!!(document.fullscreenElement || (video && video.webkitDisplayingFullscreen)));
   }
 
+  lockLandscapeOrientation() {
+    try {
+      const orientation = globalThis.screen?.orientation;
+      if (orientation && typeof orientation.lock === 'function') {
+        this.orientationLockedByPlayer = true;
+        Promise.resolve(orientation.lock('landscape')).catch(() => {});
+      }
+    } catch (e) {
+      void e;
+    }
+  }
+
+  unlockOrientationIfIdle() {
+    if (this.isFullscreenLike() || !this.orientationLockedByPlayer) {
+      return;
+    }
+    this.orientationLockedByPlayer = false;
+    try {
+      const orientation = globalThis.screen?.orientation;
+      if (orientation && typeof orientation.unlock === 'function') {
+        orientation.unlock();
+      }
+    } catch (e) {
+      void e;
+    }
+  }
+
   setFullscreenStatus(status) {
     const fullScreenButton = DOMElements.fullscreen;
     if (status) {
       fullScreenButton.classList.add('out');
       this.state.fullscreen = true;
+      this.lockLandscapeOrientation();
+      this.hideControlBar();
     } else {
       fullScreenButton.classList.remove('out');
       if (this.state.fullscreen) {
         this.state.fullscreen = false;
+        this.unlockOrientationIfIdle();
         this.fullscreenToggle(false);
       }
     }

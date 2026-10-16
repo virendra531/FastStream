@@ -1681,12 +1681,8 @@ body {
 }
 
 .mainplayer {
-    cursor: none;
-    overflow: hidden;
-}
-
-.mainplayer.controls_visible {
     cursor: auto;
+    overflow: hidden;
 }
 
 .timeline_frame,
@@ -3322,4 +3318,23 @@ input.crosstalk_calculator_input {
 .convolver_impulse_length_container .convolver_impulse_length_input::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
+}
+
+.fluid_video_wrapper.fluid_player_layout_default.pseudo_fullscreen .fluid_controls_container,
+.fluid_video_wrapper.fluid_player_layout_default.fluid_fullscreen .fluid_controls_container,
+.fluid_video_wrapper.fluid_player_layout_default.pseudo_fullscreen.fluid_fullscreen .fluid_controls_container {
+    transition: none !important;
+}
+
+.fluid_video_wrapper.fluid_player_layout_default.pseudo_fullscreen .fade_out,
+.fluid_video_wrapper.fluid_player_layout_default.fluid_fullscreen .fade_out,
+.fluid_video_wrapper.fluid_player_layout_default.pseudo_fullscreen .fade_in,
+.fluid_video_wrapper.fluid_player_layout_default.fluid_fullscreen .fade_in {
+    transition: none !important;
+}
+
+.fluid_video_wrapper.fluid_player_layout_default .fluid_controls_container .fluid_button svg {
+    stroke: #000;
+    stroke-width: 1px;
+    paint-order: stroke fill;
 }
