@@ -36,6 +36,7 @@ export class InterfaceController {
     this.mouseOverControls = false;
     this.controlsVisible = true;
     this.mouseActivityCooldown = 0;
+    this.orientationLockedByPlayer = false;
     this.failed = false;
     this.toolManager = new ToolManager(this.client, this);
     this.toolManager.setupUI();
@@ -204,6 +205,7 @@ export class InterfaceController {
   }
   dressVideo(video) {
     video.setAttribute('playsinline', 'playsinline');
+    video.setAttribute('webkit-playsinline', 'true');
     video.disableRemotePlayback = true;
   }
   addVideo(video) {
@@ -846,11 +848,20 @@ export class InterfaceController {
   }
   onControlsMouseLeave() {
     this.mouseOverControls = false;
-    if (document.activeElement && DOMElements.controlsContainer.contains(document.activeElement)) document.activeElement.blur();
-    this.queueControlsHide();
+    if (document.activeElement && DOMElements.controlsContainer.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
+    if (this.isFullscreenLike()) {
+      this.hideControlBar();
+    } else {
+      this.queueControlsHide();
+    }
   }
   onPlayerMouseMove() {
     if (Date.now() < this.mouseActivityCooldown) {
+      return;
+    }
+    if (this.isFullscreenLike()) {
       return;
     }
     this.showControlBar();
@@ -877,6 +888,11 @@ export class InterfaceController {
   }
   isBigPlayButtonVisible() {
     return DOMElements.playPauseButtonBigCircle.style.display !== 'none';
+  }
+  isFullscreenLike() {
+    return this.state.fullscreen ||
+           this.state.windowedFullscreen ||
+           DOMElements.playerContainer?.classList.contains('pseudo_fullscreen');
   }
   hideControlBar() {
     clearTimeout(this.hideControlBarTimeout);
@@ -942,6 +958,12 @@ export class InterfaceController {
       const newValue = force === undefined ? !this.state.windowedFullscreen : force;
       DOMElements.playerContainer.classList.toggle('pseudo_fullscreen', newValue);
       this.state.windowedFullscreen = newValue;
+      if (this.state.windowedFullscreen) {
+        this.lockLandscapeOrientation();
+        this.hideControlBar();
+      } else {
+        this.unlockOrientationIfIdle();
+      }
       return;
     }
     chrome.runtime.sendMessage({
@@ -949,6 +971,12 @@ export class InterfaceController {
       force,
     }, (response) => {
       this.state.windowedFullscreen = response === 'enter';
+      if (this.state.windowedFullscreen) {
+        this.lockLandscapeOrientation();
+        this.hideControlBar();
+      } else {
+        this.unlockOrientationIfIdle();
+      }
     });
   }
   async fullscreenToggle(force) {
@@ -1010,22 +1038,43 @@ export class InterfaceController {
     const video = DOMElements.videoContainer?.querySelector('video');
     this.setFullscreenStatus(!!(document.fullscreenElement || (video && video.webkitDisplayingFullscreen)));
   }
+  lockLandscapeOrientation() {
+    try {
+      const orientation = globalThis.screen?.orientation;
+      if (orientation && typeof orientation.lock === 'function') {
+        this.orientationLockedByPlayer = true;
+        Promise.resolve(orientation.lock('landscape')).catch(() => {});
+      }
+    } catch (e) {
+      void e;
+    }
+  }
+  unlockOrientationIfIdle() {
+    if (this.isFullscreenLike() || !this.orientationLockedByPlayer) {
+      return;
+    }
+    this.orientationLockedByPlayer = false;
+    try {
+      const orientation = globalThis.screen?.orientation;
+      if (orientation && typeof orientation.unlock === 'function') {
+        orientation.unlock();
+      }
+    } catch (e) {
+      void e;
+    }
+  }
   setFullscreenStatus(status) {
     const fullScreenButton = DOMElements.fullscreen;
-    const controlsContainer = DOMElements.controlsContainer;
-    if (status)
-    {
+    if (status) {
       fullScreenButton.classList.add('out');
-      controlsContainer.classList.add('disabled');
       this.state.fullscreen = true;
-    }
-    else
-    {
+      this.lockLandscapeOrientation();
+      this.hideControlBar();
+    } else {
       fullScreenButton.classList.remove('out');
-      controlsContainer.classList.remove('disabled');
-      if (this.state.fullscreen)
-      {
+      if (this.state.fullscreen) {
         this.state.fullscreen = false;
+        this.unlockOrientationIfIdle();
         this.fullscreenToggle(false);
       }
     }
