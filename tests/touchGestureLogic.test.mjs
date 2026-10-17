@@ -133,3 +133,34 @@ test('a tap after the window has elapsed starts a fresh pair', () => {
   assert.deepStrictEqual(single, ['a']);
   assert.deepStrictEqual(double, ['c']);
 });
+
+test('reset cancels a pending single', () => {
+  const single = [];
+  const clock = makeFakeScheduler();
+  const resolver = createTapResolver({
+    onSingle: (p) => single.push(p),
+    schedule: clock.schedule,
+    cancel: clock.cancel,
+  });
+
+  resolver.tap('a', 0);
+  resolver.reset();
+  clock.runAll();
+  assert.deepStrictEqual(single, []);
+});
+
+test('a tap after a stale pending window starts a fresh single', () => {
+  const single = [];
+  const clock = makeFakeScheduler();
+  const resolver = createTapResolver({
+    onSingle: (p) => single.push(p),
+    schedule: clock.schedule,
+    cancel: clock.cancel,
+  });
+
+  assert.strictEqual(resolver.tap('a', 0), 'single');
+  assert.strictEqual(resolver.tap('b', 400), 'single');
+  assert.strictEqual(clock.size, 1);
+  clock.runAll();
+  assert.deepStrictEqual(single, ['b']);
+});

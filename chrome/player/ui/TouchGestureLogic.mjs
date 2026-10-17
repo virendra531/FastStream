@@ -41,12 +41,14 @@ export function createTapResolver(options = {}) {
   return {
     tap(payload, time) {
       const now = time !== undefined ? time : Date.now();
-      if (pendingTimer !== null && lastTapTime !== null && (now - lastTapTime) <= windowMs) {
+      if (pendingTimer !== null) {
         cancel(pendingTimer);
         pendingTimer = null;
-        lastTapTime = null;
-        onDouble(payload);
-        return 'double';
+        if (lastTapTime !== null && (now - lastTapTime) <= windowMs) {
+          lastTapTime = null;
+          onDouble(payload);
+          return 'double';
+        }
       }
       lastTapTime = now;
       pendingTimer = schedule(() => {

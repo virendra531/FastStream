@@ -20,6 +20,7 @@ export class TouchFullscreenControls extends EventEmitter {
     this.feedbackTimeout = null;
     this.touchStart = null;
     this.dragging = false;
+    this.revealGuardTimeout = null;
   }
 
   setupUI() {
@@ -76,6 +77,8 @@ export class TouchFullscreenControls extends EventEmitter {
       this.tapResolver.reset();
     }
     clearTimeout(this.feedbackTimeout);
+    clearTimeout(this.revealGuardTimeout);
+    DOMElements.controlsContainer.classList.remove('reveal_guard');
     this.sideIndicator.classList.remove('visible');
     this.ripple.classList.remove('animate');
     this.touchStart = null;
@@ -129,6 +132,7 @@ export class TouchFullscreenControls extends EventEmitter {
     const rect = DOMElements.playerContainer.getBoundingClientRect();
     if (getTapZone(start.x, start.y, rect) === 'controls') {
       this.interfaceController.showControlBar();
+      this.armRevealGuard();
       return;
     }
 
@@ -143,6 +147,14 @@ export class TouchFullscreenControls extends EventEmitter {
       return true;
     }
     return false;
+  }
+
+  armRevealGuard() {
+    DOMElements.controlsContainer.classList.add('reveal_guard');
+    clearTimeout(this.revealGuardTimeout);
+    this.revealGuardTimeout = setTimeout(() => {
+      DOMElements.controlsContainer.classList.remove('reveal_guard');
+    }, 400);
   }
 
   onSingleTap(tap) {
