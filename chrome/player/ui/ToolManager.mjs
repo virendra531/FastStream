@@ -146,6 +146,7 @@ export class ToolManager {
     }
 
     const toolSettings = this.client.options.toolSettings;
+    toolSettings.playpause = {location: 'left', priority: 0};
     const toolElements = {
       playpause: DOMElements.playPauseButton,
       volume: DOMElements.volumeBlock,
