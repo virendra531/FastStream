@@ -23,6 +23,7 @@ import {ProgressBar} from './ProgressBar.mjs';
 import {SaveManager} from './SaveManager.mjs';
 import {StatusManager, StatusTypes} from './StatusManager.mjs';
 import {SubtitlesManager} from './subtitles/SubtitlesManager.mjs';
+import {TouchFullscreenControls} from './TouchFullscreenControls.mjs';
 import {ToolManager} from './ToolManager.mjs';
 import {VolumeControls} from './VolumeControls.mjs';
 
@@ -119,6 +120,8 @@ export class InterfaceController {
       this.client.setVolume(volume);
     });
     this.volumeControls.setupUI();
+    this.touchFullscreenControls = new TouchFullscreenControls(this.client, this);
+    this.touchFullscreenControls.setupUI();
 
     this.statusManager = new StatusManager();
     this.optionsWindow = new OptionsWindow();
@@ -410,6 +413,9 @@ export class InterfaceController {
     let lastSpeed = null;
     let wasPlaying = false;
     DOMElements.videoContainer.addEventListener('mousedown', (e)=>{
+      if (this.touchFullscreenControls?.isActive()) {
+        return;
+      }
       if (e.button === 0) {
         clearTimeout(holdTimeout);
         holdTimeout = setTimeout(() => {
@@ -449,6 +455,9 @@ export class InterfaceController {
     let clickTimeout = null;
     DOMElements.videoContainer.addEventListener('click', (e) => {
       clearTimeout(holdTimeout);
+      if (this.touchFullscreenControls?.isActive()) {
+        return;
+      }
       if (lastSpeed !== null) {
         stopSpeedUp();
         return;
@@ -1000,6 +1009,9 @@ export class InterfaceController {
     this.mouseOverControls = true;
   }
   onControlsMouseLeave() {
+    if (this.touchFullscreenControls?.isActive()) {
+      return;
+    }
     this.mouseOverControls = false;
     if (document.activeElement && DOMElements.controlsContainer.contains(document.activeElement)) {
       document.activeElement.blur();
@@ -1022,6 +1034,9 @@ export class InterfaceController {
   }
 
   queueControlsHide(time) {
+    if (this.touchFullscreenControls?.isActive()) {
+      return;
+    }
     clearTimeout(this.hideControlBarTimeout);
     this.hideControlBarTimeout = setTimeout(() => {
       if (!this.focusingControls && !this.mouseOverControls && !this.isBigPlayButtonVisible() && this.state.playing && this.toolManager.canHideControls()) {
@@ -1051,6 +1066,10 @@ export class InterfaceController {
     return this.state.fullscreen ||
            this.state.windowedFullscreen ||
            DOMElements.playerContainer?.classList.contains('pseudo_fullscreen');
+  }
+
+  isControlsVisible() {
+    return this.controlsVisible;
   }
 
   hideControlBar() {
@@ -1134,6 +1153,7 @@ export class InterfaceController {
       } else {
         this.unlockOrientationIfIdle();
       }
+      this.touchFullscreenControls?.updateActiveState();
       return;
     }
     chrome.runtime.sendMessage({
@@ -1147,6 +1167,7 @@ export class InterfaceController {
       } else {
         this.unlockOrientationIfIdle();
       }
+      this.touchFullscreenControls?.updateActiveState();
     });
   }
 
@@ -1291,7 +1312,9 @@ export class InterfaceController {
     const previousValue = this.state.playing;
     this.state.playing = false;
     this.updatePlayPauseButton();
-    this.showControlBar();
+    if (!this.touchFullscreenControls?.isActive()) {
+      this.showControlBar();
+    }
     if (previousValue) {
       this.playPauseAnimation();
     }
