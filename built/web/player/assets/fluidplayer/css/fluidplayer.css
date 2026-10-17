@@ -3392,3 +3392,11 @@ input.crosstalk_calculator_input {
         transform: scale(3);
     }
 }
+
+.mainplayer .fluid_controls_container.reveal_guard {
+    pointer-events: none;
+}
+
+.mainplayer.touch_fullscreen {
+    touch-action: manipulation;
+}
