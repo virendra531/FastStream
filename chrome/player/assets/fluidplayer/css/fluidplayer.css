@@ -3338,3 +3338,57 @@ input.crosstalk_calculator_input {
     stroke-width: 1px;
     paint-order: stroke fill;
 }
+
+.mainplayer .touch_seek_indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-size: 28px;
+    font-weight: 700;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1000;
+    transition: opacity 0.2s ease;
+    text-shadow: 0 0 4px #000, 0 0 4px #000, 0 0 4px #000;
+}
+
+.mainplayer .touch_seek_indicator.left {
+    left: 25%;
+}
+
+.mainplayer .touch_seek_indicator.right {
+    left: 75%;
+}
+
+.mainplayer .touch_seek_indicator.visible {
+    opacity: 1;
+}
+
+.mainplayer .touch_seek_ripple {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.35);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1000;
+}
+
+.mainplayer .touch_seek_ripple.animate {
+    animation: touch_seek_ripple 0.4s ease-out;
+}
+
+@keyframes touch_seek_ripple {
+    from {
+        opacity: 0.6;
+        transform: scale(0.5);
+    }
+    to {
+        opacity: 0;
+        transform: scale(3);
+    }
+}
