@@ -62,6 +62,29 @@ export default class HLSPlayer extends EventEmitter {
       appendErrorMaxRetry: 3,
       // eslint-disable-next-line new-cap
       loader: HLSLoaderFactory(this),
+      fragLoadPolicy: {
+        default: {
+          // Some CDNs and same-origin relays serve media with a slow first
+          // byte (5-10s TTFB that sometimes spikes). The default 10s
+          // first-byte budget sat right at that edge and repeatedly aborted
+          // healthy fragments before they started; keep it tolerant so a slow
+          // start does not surface as a spurious "fragment failure". The total
+          // load budget is generous because large (e.g. 4K) fragments on a slow
+          // or constrained connection can take a while to transfer in full.
+          maxTimeToFirstByteMs: 30000,
+          maxLoadTimeMs: 240000,
+          timeoutRetry: {
+            maxNumRetry: 4,
+            retryDelayMs: 0,
+            maxRetryDelayMs: 0,
+          },
+          errorRetry: {
+            maxNumRetry: 3,
+            retryDelayMs: 500,
+            maxRetryDelayMs: 2000,
+          },
+        },
+      },
       enableDateRangeMetadataCues: true,
       enableEmsgMetadataCues: true,
       enableID3MetadataCues: true,
@@ -187,7 +210,25 @@ export default class HLSPlayer extends EventEmitter {
     }
   }
   load() {
-    this.hls.startLoad();
+    if (!this.hls.levels || !this.hls.levels.length) {
+      // A manifest that parsed to zero usable variants (dead CDN edge, WAF
+      // challenge HTML served as an m3u8, fully-incompatible codecs, ...) makes
+      // hls.js die in set-level ("level is undefined") synchronously inside
+      // startLoad while inside the MANIFEST_PARSED XHR callback — an uncaught
+      // TypeError that leaves the player silently dead. Surface it so the host
+      // page can flag the source as broken.
+      this.emit(DefaultPlayerEvents.ERROR, 'hls load failed: no playable variants');
+      return;
+    }
+    try {
+      this.hls.startLoad();
+    } catch (e) {
+      // hls.js can throw synchronously inside startLoad (e.g. the 'set level'
+      // crash on a manifest with no usable variants). That is a JS exception,
+      // not an hls ERROR event — surface it so failedToLoad fires instead of
+      // leaving the player silently dead.
+      this.emit(DefaultPlayerEvents.ERROR, e?.message || 'hls start failed');
+    }
   }
   getClient() {
     return this.client;
@@ -216,6 +257,12 @@ export default class HLSPlayer extends EventEmitter {
       }
       this.hls.subtitleDisplay = false;
       this.hls.subtitleTrack = -1;
+      if (levels && levels.size === 0) {
+        // The same zero-variant manifest guard as load(), evaluated from the
+        // levels the MANIFEST_PARSED handler already enumerated.
+        this.emit(DefaultPlayerEvents.ERROR, 'hls load failed: no playable variants');
+        return;
+      }
       this.load();
     });
     this.hls.on(Hls.Events.LEVEL_UPDATED, (a, data) => {
@@ -223,6 +270,36 @@ export default class HLSPlayer extends EventEmitter {
     });
     this.hls.on(Hls.Events.AUDIO_TRACK_UPDATED, (a, data) => {
       this.trackUpdated(data.details, 1);
+    });
+    // Relay hls.js errors (dead manifest, unreachable segments, undemuxable
+    // content, etc.) so failedToLoad fires — without this, dead HLS sources
+    // fail silently into a black screen.
+    this.hls.on(Hls.Events.ERROR, (event, data) => {
+      if (data?.fatal) {
+        this.emit(DefaultPlayerEvents.ERROR, data?.details || 'hls load failed');
+        return;
+      }
+      // Demux/parse failures ("Found no media in fragment", codec mismatch)
+      // mean the source's bytes can't be turned into video at all — usually a
+      // CDN served non-media content. These must not be forgiven just because
+      // the video element has a nonzero currentTime (a black / stuck frame),
+      // or an otherwise-dead source would keep the player on a black screen
+      // forever without ever signalling the embedding page.
+      const details = data?.details || '';
+      const demuxFailure = /FRAG_PARSING_ERROR|BUFFER_APPEND_ERROR|BUFFER_INCOMPATIBLE_CODECS_ERROR|MANIFEST_INCOMPATIBLE_CODECS_ERROR/.test(details);
+      if (!demuxFailure && this.video && this.video.currentTime > 0) {
+        this.consecutiveLoadErrors = 0;
+        return;
+      }
+      this.consecutiveLoadErrors = (this.consecutiveLoadErrors || 0) + 1;
+      if (this.consecutiveLoadErrors >= 3) {
+        this.consecutiveLoadErrors = 0;
+        this.emit(DefaultPlayerEvents.ERROR, data?.details || 'hls load failed');
+      }
+    });
+    this.hls.on(Hls.Events.FRAG_BUFFERED, () => {
+      this.consecutiveLoadErrors = 0;
+      this.clearLoadWatchdog();
     });
   }
   trackUpdated(levelDetails, trackID) {
@@ -275,7 +352,32 @@ export default class HLSPlayer extends EventEmitter {
   }
   async setSource(source) {
     this.source = source;
+    this.consecutiveLoadErrors = 0;
+    this.startLoadWatchdog();
     this.hls.loadSource(source.url);
+  }
+  // Fail sources that never produce any media data (silent stalls the hls.js
+  // error event never reports): if nothing buffers within 60s, give up. The
+  // budget is generous because large (e.g. 4K) fragments on a slow or
+  // constrained connection can take 20-30s+ for the FIRST fragment alone; a 20s
+  // deadline wire-failed healthy sources before their first media byte arrived
+  // while smaller fragments squeaked under it. Once any data buffers the
+  // single-shot timer becomes a no-op.
+  startLoadWatchdog() {
+    this.clearLoadWatchdog();
+    this.loadWatchdog = setTimeout(() => {
+      const video = this.video;
+      const hasData = video && (video.readyState >= 2 || video.buffered.length > 0);
+      if (!hasData) {
+        this.emit(DefaultPlayerEvents.ERROR, 'source_load_timeout');
+      }
+    }, 60000);
+  }
+  clearLoadWatchdog() {
+    if (this.loadWatchdog) {
+      clearTimeout(this.loadWatchdog);
+      this.loadWatchdog = null;
+    }
   }
   getSource() {
     return this.source;
@@ -308,6 +410,8 @@ export default class HLSPlayer extends EventEmitter {
     return this.video.pause();
   }
   destroy() {
+    // Stop the load watchdog before tearing down hls.js.
+    this.clearLoadWatchdog();
     this.fragmentRequester.destroy();
     this.hls.destroy();
     VideoUtils.destroyVideo(this.video);

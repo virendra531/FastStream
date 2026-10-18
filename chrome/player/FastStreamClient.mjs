@@ -42,6 +42,22 @@ import {LevelManager} from './players/LevelManager.mjs';
  */
 const SET_VOLUME_USING_NODE = !EnvUtils.isSafari() && EnvUtils.isWebAudioSupported();
 
+// Thresholds for the sustained-stall guard. reportAfterMs sits well below the
+// effective fragment timeout so a stall is reported long before the segment is
+// finally marked failed; inFlightReportAfterMs allows a larger budget for a
+// slow relay (whose slow first-byte is normal) while still bounding a hung
+// in-flight fetch. minForwardBufferSec is the runway the playhead needs to count
+// as healthy — measured, not guessed: a real throttled stall froze with ~0.03s
+// of runway for 190s+, while healthy playback measured 3-14s of runway; 1s sits
+// in that gap with room on both sides. recoveryAttempts bounds how many times a
+// wedged pipeline is re-issued before the stall is reported, and
+// recoveryIntervalMs keeps the 1s mainloop from re-issuing on every tick while a
+// re-issue is still in flight. A starved playhead sits at the TAIL of the last
+// complete fragment, so the fragment that unblocks it begins just AFTER the
+// playhead rather than containing it; inFlightLookaheadSec (~3 five-second
+// segments) is how far ahead still counts as "the current gap".
+const STALL_GUARD = { reportAfterMs: 30_000, inFlightReportAfterMs: 90_000, minForwardBufferSec: 1, recoveryAttempts: 3, recoveryIntervalMs: 8000, inFlightLookaheadSec: 15 };
+
 export class FastStreamClient extends EventEmitter {
   /**
    * Constructs a FastStreamClient instance.
@@ -115,7 +131,8 @@ export class FastStreamClient extends EventEmitter {
     };
 
     this._needsUserInteraction = false;
-
+    this.stallSince = null;
+    this.stallRecovery = null;
     this.progressMemory = null;
     this.playerLoader = new PlayerLoader();
     this.levelManager = new LevelManager(this);
@@ -275,16 +292,21 @@ export class FastStreamClient extends EventEmitter {
    * Resets failed fragments to waiting status.
    */
   resetFailed() {
+    let recovered = 0;
     for (const levelID in this.fragmentsStore) {
       if (Object.hasOwn(this.fragmentsStore, levelID)) {
         this.fragmentsStore[levelID].forEach((fragment) => {
           if (fragment.status === DownloadStatus.DOWNLOAD_FAILED) {
             fragment.status = DownloadStatus.WAITING;
+            recovered += 1;
           }
         });
       }
     }
     this.interfaceController.updateFragmentsLoaded();
+    if (recovered > 0) {
+      this.retryFailedFragments();
+    }
   }
 
   /**
@@ -828,6 +850,17 @@ export class FastStreamClient extends EventEmitter {
    * @return {Promise<void>}
    */
   async setSource(source) {
+    // Rebuilds the whole player, so two overlapping calls would tear down the
+    // MediaSource the other just built (the viewer sees a native media error 4
+    // against an otherwise-healthy transport). Serialize them through a queue:
+    // each call chains onto the previous one, giving strict one-at-a-time
+    // execution with last-wins. A call that rejects still runs its successor.
+    const runSetSource = () => this.__setSourceInternal(source);
+    const queued = (this.__setSourceQueue || Promise.resolve()).then(runSetSource, runSetSource);
+    this.__setSourceQueue = queued.catch(() => {});
+    return queued;
+  }
+  async __setSourceInternal(source) {
     try {
       source = source.copy();
 
@@ -1129,6 +1162,8 @@ export class FastStreamClient extends EventEmitter {
     }
 
     if (this.player) {
+      this.recoverStalledPlayback();
+      this.detectSustainedStall();
       this.updatePreview();
       this.predownloadFragments();
 
@@ -1147,6 +1182,267 @@ export class FastStreamClient extends EventEmitter {
     this.emit('tick', this);
   }
 
+  /**
+   * Re-requests the fragment covering the current playback position.
+   * @return {boolean} True if a reload was started.
+   */
+  retryFailedFragments() {
+    return this.startLoadAt(this.state.currentTime);
+  }
+  /**
+   * Restarts loading from a position, creating a fresh request for whatever
+   * fragment covers it. The only public lever that re-issues a fragment hls.js
+   * has already given up on.
+   * @param {number} time
+   * @return {boolean} True if a reload was started.
+   */
+  startLoadAt(time) {
+    const hls = this.player && this.player.hls;
+    if (!hls) {
+      return false;
+    }
+    try {
+      hls.startLoad(time);
+      return true;
+    } catch (e) {
+      // hls.js can throw on some state transitions; never let that kill the
+      // 1s mainloop (or a click handler) that called us.
+      return false;
+    }
+  }
+  /**
+   * True when no buffered range covers the given time, i.e. playback is
+   * starving at the playhead rather than merely between two buffered ranges.
+   * @param {number} time
+   * @return {boolean}
+   */
+  isStarvedAt(time) {
+    const video = this.player && this.player.getVideo ? this.player.getVideo() : null;
+    if (!video || !video.buffered || !video.buffered.length) {
+      return true;
+    }
+    // Require real RUNWAY past the playhead, not mere containment. A real
+    // repro froze at the very end of a buffered range (0.03s of runway), so a
+    // containment test called a hard deadlock "healthy" and the guard never
+    // fired; hls.js's own gap-controller had already called the same state a
+    // stall.
+    const needed = STALL_GUARD.minForwardBufferSec;
+    for (let i = 0; i < video.buffered.length; i++) {
+      const end = video.buffered.end(i);
+      if (time >= video.buffered.start(i) && time <= end && end - time >= needed) {
+        return false;
+      }
+    }
+    return true;
+  }
+  /**
+   * Finds the permanently failed fragment of the current video level that
+   * covers a time position.
+   * @param {number} time
+   * @return {Object|null}
+   */
+  getFailedFragmentAt(time) {
+    const levelID = this.player && this.player.getCurrentVideoLevelID ? this.player.getCurrentVideoLevelID() : null;
+    const fragments = levelID != null ? this.fragmentsStore[levelID] : null;
+    if (!fragments) {
+      return null;
+    }
+    for (const fragment of fragments) {
+      if (fragment
+        && fragment.status === DownloadStatus.DOWNLOAD_FAILED
+        && typeof fragment.start === 'number'
+        && typeof fragment.end === 'number'
+        && time >= fragment.start
+        && time < fragment.end) {
+        return fragment;
+      }
+    }
+    return null;
+  }
+  /**
+   * Recovers playback when the fragment under the playhead has failed for
+   * good. Re-requests it a few times first, then skips the hole: hls.js will
+   * never ask for that fragment again and has no gap skip of its own here, so
+   * without this the player sits on a stalled frame indefinitely.
+   * @return {boolean} True if a recovery action was taken.
+   */
+  recoverStalledPlayback() {
+    // Bounded on purpose: a genuinely dead source must stop being retried, and
+    // the interval keeps a 1s tick from re-issuing the same request every tick.
+    const FAILED_FRAGMENT_RETRY_ATTEMPTS = 3;
+    const FAILED_FRAGMENT_RETRY_INTERVAL_MS = 4000;
+    const currentTime = this.state.currentTime;
+    const failed = this.getFailedFragmentAt(currentTime);
+    // A failure the pre-downloader can step over, or a playhead that still has
+    // media buffered, needs no recovery (and no retained state).
+    if (!failed || !this.isStarvedAt(currentTime)) {
+      this.failedPlaybackRecovery = null;
+      return false;
+    }
+    const now = Date.now();
+    if (!this.failedPlaybackRecovery) {
+      this.failedPlaybackRecovery = { lastAction: now, attempts: 0 };
+    }
+    const recovery = this.failedPlaybackRecovery;
+    if (now - recovery.lastAction < FAILED_FRAGMENT_RETRY_INTERVAL_MS) {
+      return false;
+    }
+    recovery.lastAction = now;
+    // Back to WAITING so the accelerated pre-downloader picks it up again on
+    // its next pass as well as through the hls.js reload below.
+    failed.status = DownloadStatus.WAITING;
+    this.interfaceController.updateFragmentsLoaded();
+    if (recovery.attempts < FAILED_FRAGMENT_RETRY_ATTEMPTS) {
+      recovery.attempts += 1;
+      return this.retryFailedFragments();
+    }
+    // Out of retries: keep the video moving past the dead segment instead of
+    // freezing on it forever. Both steps are needed: the client setter is the
+    // player's own seek path (it moves the media element, syncs the secondary
+    // audio player and stores progress), while startLoad re-targets hls.js's
+    // loading pipeline at the new position. Either alone leaves the element
+    // parked on the dead segment.
+    const skipTo = failed.end + 0.1;
+    this.failedPlaybackRecovery = null;
+    if (skipTo <= currentTime) {
+      return false;
+    }
+    this.currentTime = skipTo;
+    this.startLoadAt(skipTo);
+    return true;
+  }
+  /**
+   * Reports a mid-playback stall that no other guard can see: the playhead has
+   * been starved for longer than STALL_GUARD.reportAfterMs and no fragment
+   * covering it is still legitimately in flight. Unlike the one-shot load
+   * watchdog this measures CONTINUOUS starvation, so a mid-playback freeze is
+   * reported instead of silently riding out the full fragment timeout.
+   * @return {boolean} True when a stall was reported.
+   */
+  detectSustainedStall() {
+    if (this.destroyed) return false;
+    // A seek legitimately empties the buffer, and the user is driving it.
+    if (this.interfaceController.isUserSeeking()) {
+      this.stallSince = null;
+      return false;
+    }
+    // A stream that has run to the end of its media is FINISHED, not stalled:
+    // the playhead sits at the duration with nothing left to fetch, so the
+    // starvation test below would otherwise call a normal finish a stall and
+    // report it while the viewer is simply sitting on the last frame. Clear the
+    // measurement AND the recovery budget — a finished stream is not wedged.
+    const video = this.player && this.player.getVideo ? this.player.getVideo() : null;
+    if (video && video.ended) {
+      this.stallSince = null;
+      this.stallRecovery = null;
+      return false;
+    }
+    if (!this.isStarvedAt(this.state.currentTime)) {
+      this.stallSince = null;
+      // Playback is healthy again, so the pipeline recovered: allow a full
+      // recovery budget if it ever wedges again.
+      this.stallRecovery = null;
+      return false;
+    }
+    const now = Date.now();
+    if (this.stallSince === null || this.stallSince === undefined) {
+      // Start measuring rather than reporting on the first starved tick.
+      this.stallSince = now;
+      return false;
+    }
+    const starvedFor = now - this.stallSince;
+    // A fragment still in flight over the playhead means the player is working,
+    // not stuck — but not indefinitely, so an in-flight stall still reports
+    // once it outlives the in-flight budget.
+    const inFlight = this.hasFragmentInFlightAt(this.state.currentTime);
+    const budget = inFlight ? STALL_GUARD.inFlightReportAfterMs : STALL_GUARD.reportAfterMs;
+    if (starvedFor < budget) {
+      return false;
+    }
+    // Report on the CONTEXT bus, not this.emit. FastStreamClient extends
+    // EventEmitter, so this.emit only fans out to the CLIENT's own contexts,
+    // while the ERROR handler that reaches the host page is registered on
+    // this.context — which came from player.createContext() and therefore
+    // lives on the PLAYER's emitter. Emitting on the client's own bus produces
+    // a report nobody can receive, so the reason never reaches the host.
+    // A stalled request pipeline is recoverable, so try re-issuing before
+    // declaring failure — for BOTH shapes. The measured root cause is a wedged
+    // request whose sibling fetch still returned 200, so the bytes were always
+    // available and only the request had to be re-made. startLoadAt is the only
+    // public lever that re-issues a fragment hls.js has given up on, and it is
+    // already the first step recoverStalledPlayback takes.
+    if (this.retryStalledInFlight()) {
+      // Recovery pending: keep measuring, do not report.
+      //
+      // stallSince is deliberately NOT reset here. Re-arming it to now would
+      // restart the whole in-flight budget on every attempt, so attempts 2 and
+      // 3 were 90s apart and STALL_GUARD.recoveryIntervalMs was unreachable dead
+      // code. The interval is the only thing pacing re-issues; the budget gates
+      // just the first.
+      return false;
+    }
+    this.stallSince = null;
+    if (this.context) {
+      this.context.emit(DefaultPlayerEvents.ERROR, inFlight
+        ? 'stalled_playback_fragment_in_flight'
+        : 'stalled_playback');
+    }
+    return true;
+  }
+  /**
+   * Re-issues the stalled load a bounded number of times.
+   * @return {boolean} True when a re-issue was started (more may follow).
+   */
+  retryStalledInFlight() {
+    const now = Date.now();
+    if (!this.stallRecovery) {
+      // lastAction is 0, NOT now: the first re-issue must be immediate. Seeding
+      // it with now made the interval check below fail on the very first call,
+      // so recovery would have run out of attempts having re-issued nothing.
+      this.stallRecovery = { attempts: 0, lastAction: 0 };
+    }
+    const recovery = this.stallRecovery;
+    if (recovery.attempts >= STALL_GUARD.recoveryAttempts) {
+      // Exhausted. Deliberately NOT cleared here: nulling it would hand every
+      // re-armed measurement window a fresh budget, so a permanently dead source
+      // was re-issued over and over. The budget is only refilled when the
+      // playhead is healthy again, which is the one condition that proves the
+      // pipeline recovered.
+      return false;
+    }
+    if (recovery.attempts > 0 && now - recovery.lastAction < STALL_GUARD.recoveryIntervalMs) {
+      return true;
+    }
+    recovery.lastAction = now;
+    recovery.attempts += 1;
+    this.stallRecovery = recovery;
+    return this.startLoadAt(this.state.currentTime);
+  }
+  /**
+   * True when a fragment covering `time` is still legitimately being fetched
+   * (issued but not yet complete or failed).
+   * @param {number} time
+   * @return {boolean}
+   */
+  hasFragmentInFlightAt(time) {
+    const isFetching = (fragment) => fragment.status === DownloadStatus.ENQUEUED
+      || fragment.status === DownloadStatus.DOWNLOAD_INITIATED
+      || fragment.status === DownloadStatus.WAITING;
+    const lookahead = STALL_GUARD.inFlightLookaheadSec;
+    const inFlight = (list) => Array.isArray(list) && list.some((fragment) => {
+      if (typeof fragment?.start !== 'number' || typeof fragment?.end !== 'number') return false;
+      if (!isFetching(fragment)) return false;
+      // Backfill: already behind the playhead, so it cannot unblock anything.
+      if (fragment.end <= time) return false;
+      // The fragment covering the playhead, OR the one that starts just after it.
+      // A STARVED playhead always sits at the end of its last complete fragment,
+      // so requiring strict containment here makes the in-flight budget
+      // unreachable in the real browser: the fragment being downloaded starts
+      // just LATER than the playhead and is therefore never "covering" it.
+      return fragment.start <= time + lookahead;
+    });
+    return inFlight(this.fragments) || inFlight(this.audioFragments);
+  }
   /**
    * Pre-downloads fragments for smooth playback.
    * @return {boolean} True if any fragments were downloaded.
@@ -1464,8 +1760,18 @@ export class FastStreamClient extends EventEmitter {
     });
 
     this.context.on(DefaultPlayerEvents.ERROR, (event, msg) => {
-      console.error('ERROR', event);
-      this.failedToLoad(msg || Localize.getMessage('player_error_load'));
+      // The players emit ERROR with a single argument, so the reason arrives
+      // as `event`, not `msg`. Read whichever one carries it, and identify a
+      // native video MediaError by code so a transient decode error is
+      // distinguishable from a network or unsupported-source failure.
+      const mediaError = event && event.target && event.target.error;
+      const reason = msg
+        || (typeof event === 'string' ? event : null)
+        || (event && event.message ? String(event.message) : null)
+        || (mediaError ? 'media error ' + mediaError.code + ': ' + (mediaError.message || '') : null)
+        || Localize.getMessage('player_error_load');
+      console.error('ERROR', reason);
+      this.failedToLoad(reason);
     });
 
     this.context.on(DefaultPlayerEvents.NEED_KEY, (event) => {
@@ -1965,7 +2271,7 @@ export class FastStreamClient extends EventEmitter {
    * @return {Array|undefined}
    */
   get fragments() {
-    return this.fragmentsStore[this.getCurrentVideoLevelID()];
+    return this.fragmentsStore?.[this.getCurrentVideoLevelID()];
   }
 
   /**
@@ -1973,7 +2279,7 @@ export class FastStreamClient extends EventEmitter {
    * @return {Array|undefined}
    */
   get audioFragments() {
-    return this.fragmentsStore[this.getCurrentAudioLevelID()];
+    return this.fragmentsStore?.[this.getCurrentAudioLevelID()];
   }
 
   /**

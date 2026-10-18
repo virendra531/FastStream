@@ -103,9 +103,12 @@ export function HLSLoaderFactory(player) {
           },
           onFail: (entry) => {
             setTimeout(() => {
-              this.copyStats(entry.stats);
-              this.stats.aborted = true;
-              if (this.callbacks?.onAbort) this.callbacks.onAbort(this.stats, this.context, null, null);
+              // Surface fragment failures to hls.js instead of aborting silently.
+              if (entry.stats) this.copyStats(entry.stats);
+              if (this.callbacks) {
+                const error = entry.stats?.error || {code: 0, text: 'timeout'};
+                if (this.callbacks.onError) this.callbacks.onError(error, this.context, null, this.stats);
+              }
             }, 1000);
             const index = activeRequests.indexOf(loader);
             if (index > -1) {
@@ -155,9 +158,11 @@ export function HLSLoaderFactory(player) {
         },
         onFail: (entry) => {
           setTimeout(() => {
-            this.copyStats(entry.stats);
+            // Surface playlist/manifest failures to hls.js instead of aborting silently.
+            if (entry.stats) this.copyStats(entry.stats);
             if (this.callbacks) {
-              if (this.callbacks?.onAbort) this.callbacks.onAbort(this.stats, this.context, null, null);
+              const error = entry.stats?.error || {code: 0, text: 'timeout'};
+              if (this.callbacks.onError) this.callbacks.onError(error, this.context, null, this.stats);
             }
           }, 1000);
         },
