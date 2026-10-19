@@ -39,6 +39,8 @@ export class InterfaceController {
     this.mouseActivityCooldown = 0;
     this.orientationLockedByPlayer = false;
     this.failed = false;
+    this.autoRetryFragmentsFailedAt = 0;
+    this.autoRetryFragmentsCooldownMs = 3000;
     this.toolManager = new ToolManager(this.client, this);
     this.toolManager.setupUI();
     this.fineTimeControls = new FineTimeControls(this.client);
@@ -277,8 +279,14 @@ export class InterfaceController {
     if (failed > 0) {
       DOMElements.resetFailed.style.display = '';
       DOMElements.resetFailed.textContent = Localize.getMessage(failed === 1 ? 'player_fragment_failed_singular' : 'player_fragment_failed_plural', [failed]);
+      const now = Date.now();
+      if (!this.autoRetryFragmentsFailedAt || now - this.autoRetryFragmentsFailedAt > this.autoRetryFragmentsCooldownMs) {
+        this.autoRetryFragmentsFailedAt = now;
+        this.client.resetFailed();
+      }
     } else {
       DOMElements.resetFailed.style.display = 'none';
+      this.autoRetryFragmentsFailedAt = 0;
     }
   }
   updateSkipSegments() {
