@@ -269,6 +269,16 @@ export class InterfaceController {
       this.setFullscreenStatus(!!video.webkitDisplayingFullscreen);
     });
 
+    // webkitEnterFullscreen (native iOS video fullscreen) fires these, not
+    // webkitfullscreenchange, so keep the fullscreen button state in sync.
+    video.addEventListener('webkitbeginfullscreen', () => {
+      this.setFullscreenStatus(true);
+    });
+
+    video.addEventListener('webkitendfullscreen', () => {
+      this.setFullscreenStatus(false);
+    });
+
     DOMElements.videoContainer.appendChild(video);
   }
 
@@ -1180,11 +1190,29 @@ export class InterfaceController {
   }
 
   async fullscreenToggle(force) {
-    // iOS Safari (iPhone) has no Fullscreen API. Use the in-page windowed
-    // fullscreen so the player stays on screen instead of handing the video
-    // off to the native system player via webkitEnterFullscreen.
+    // iOS (iPhone) has no element Fullscreen API: document.fullscreenEnabled is
+    // false and Apple only lets a <video> go fullscreen. A Home-Screen
+    // (standalone) app has no browser toolbar to begin with, so stay in the
+    // in-page windowed fullscreen and keep the custom UI. In a normal Safari or
+    // Firefox tab the toolbar cannot be hidden by script, so hand the video to
+    // the native iOS player: real landscape and no toolbar, at the cost of the
+    // native controls.
     if (!document.fullscreenEnabled) {
-      this.toggleWindowedFullscreen(force);
+      const video = DOMElements.videoContainer?.querySelector('video');
+      const standalone = globalThis.navigator?.standalone === true ||
+        globalThis.matchMedia?.('(display-mode: standalone)').matches === true;
+      if (standalone || !video || typeof video.webkitEnterFullscreen !== 'function') {
+        this.toggleWindowedFullscreen(force);
+        return;
+      }
+      const entering = force === undefined ? !video.webkitDisplayingFullscreen : force;
+      if (entering) {
+        if (!video.webkitDisplayingFullscreen) {
+          video.webkitEnterFullscreen();
+        }
+      } else if (video.webkitDisplayingFullscreen && typeof video.webkitExitFullscreen === 'function') {
+        video.webkitExitFullscreen();
+      }
       return;
     }
     if (document.fullscreenEnabled) {
