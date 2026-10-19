@@ -1180,32 +1180,11 @@ export class InterfaceController {
   }
 
   async fullscreenToggle(force) {
-    const video = DOMElements.videoContainer?.querySelector('video');
-    // iOS Safari (iPhone) has no Fullscreen API; use the video element's native
-    // fullscreen instead. Must be called synchronously within the user gesture.
+    // iOS Safari (iPhone) has no Fullscreen API. Use the in-page windowed
+    // fullscreen so the player stays on screen instead of handing the video
+    // off to the native system player via webkitEnterFullscreen.
     if (!document.fullscreenEnabled) {
-      const hasNativeIOSFullscreen = typeof video?.webkitEnterFullscreen === 'function';
-      const hasLoadedSource = !!video && (video.currentSrc || video.src);
-      if (hasNativeIOSFullscreen && hasLoadedSource) {
-        if (force === false || video.webkitDisplayingFullscreen) {
-          if (typeof video.webkitExitFullscreen === 'function') {
-            video.webkitExitFullscreen();
-          }
-          this.setFullscreenStatus(false);
-        } else {
-          try {
-            video.webkitEnterFullscreen();
-          } catch (e) {
-            this.toggleWindowedFullscreen();
-            return;
-          }
-          this.setFullscreenStatus(true);
-        }
-        return;
-      }
-      // No video, video not loaded, or no native fullscreen support:
-      // fall back to a CSS pseudo-fullscreen.
-      this.toggleWindowedFullscreen();
+      this.toggleWindowedFullscreen(force);
       return;
     }
     if (document.fullscreenEnabled) {
