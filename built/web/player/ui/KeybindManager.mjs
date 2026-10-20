@@ -44,15 +44,15 @@ export class KeybindManager extends EventEmitter {
     });
     this.on('VolumeUp', (e) => {
       this.client.volume = Math.round(Math.min(this.client.volume + 0.10, 3) * 100) / 100;
-      this.client.interfaceController.showControlBarTemporarily();
+      this.showTemporarily();
     });
     this.on('VolumeDown', (e) => {
       this.client.volume = Math.round(Math.max(this.client.volume - 0.10, 0) * 100) / 100;
-      this.client.interfaceController.showControlBarTemporarily();
+      this.showTemporarily();
     });
     this.on('VolumeReset', (e) => {
       this.client.volume = 1;
-      this.client.interfaceController.showControlBarTemporarily();
+      this.showTemporarily();
     });
     this.on('Mute', (e) => {
       this.client.interfaceController.volumeControls.muteToggle();
@@ -100,23 +100,23 @@ export class KeybindManager extends EventEmitter {
     });
     this.on('IncreasePlaybackRate', (e) => {
       this.client.playbackRate = Math.min(this.client.playbackRate + 0.1, this.client.options.maxPlaybackRate);
-      this.client.interfaceController.showControlBarTemporarily();
+      this.showTemporarily();
     });
     this.on('DecreasePlaybackRate', (e) => {
       this.client.playbackRate = Math.max(this.client.playbackRate - 0.1, 0.1);
-      this.client.interfaceController.showControlBarTemporarily();
+      this.showTemporarily();
     });
     this.on('ResetPlaybackRate', (e) => {
       this.client.playbackRate = 1;
-      this.client.interfaceController.showControlBarTemporarily();
+      this.showTemporarily();
     });
     this.on('UndoSeek', (e) => {
       this.client.undoSeek();
-      this.client.interfaceController.showControlBarTemporarily();
+      this.showTemporarily();
     });
     this.on('RedoSeek', (e) => {
       this.client.redoSeek();
-      this.client.interfaceController.showControlBarTemporarily();
+      this.showTemporarily();
     });
     this.on('ResetFailed', (e) => {
       this.client.resetFailed();
@@ -208,6 +208,11 @@ export class KeybindManager extends EventEmitter {
       if (this.keybindMap.has(keybind)) {
         this.keybindMap.set(keybind, keybinds[keybind]);
       }
+    }
+  }
+  showTemporarily() {
+    if (!this.client.interfaceController.isFullscreenLike()) {
+      this.client.interfaceController.showControlBarTemporarily();
     }
   }
   eventToKeybind(e) {

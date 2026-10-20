@@ -1120,7 +1120,7 @@ export class InterfaceController {
     const previousValue = this.state.playing;
     this.state.playing = false;
     this.updatePlayPauseButton();
-    if (!this.touchFullscreenControls?.isActive()) {
+    if (!this.touchFullscreenControls?.isActive() && !this.isFullscreenLike()) {
       this.showControlBar();
     }
     if (previousValue) {
