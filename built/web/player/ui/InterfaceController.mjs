@@ -8,6 +8,7 @@ import {VisChangeActions} from '../options/defaults/VisChangeActions.mjs';
 import {EnvUtils} from '../utils/EnvUtils.mjs';
 import {InterfaceUtils} from '../utils/InterfaceUtils.mjs';
 import {StringUtils} from '../utils/StringUtils.mjs';
+import {SubtitleUtils} from '../utils/SubtitleUtils.mjs';
 import {URLUtils} from '../utils/URLUtils.mjs';
 import {Utils} from '../utils/Utils.mjs';
 import {WebUtils} from '../utils/WebUtils.mjs';
@@ -26,6 +27,13 @@ import {SubtitlesManager} from './subtitles/SubtitlesManager.mjs';
 import {TouchFullscreenControls} from './TouchFullscreenControls.mjs';
 import {ToolManager} from './ToolManager.mjs';
 import {VolumeControls} from './VolumeControls.mjs';
+// Set by the host page (via the iframe's query string) ONLY when it is NOT a
+// Home-Screen (standalone) app: in a Safari tab the native video fullscreen is
+// the only way to hide Safari's URL bar/tabs, while a standalone app has no
+// chrome to hide and needs the forced-landscape windowed path instead. The
+// host detects standalone in the top-level page because navigator.standalone /
+// display-mode are unreliable inside this iframe.
+const NATIVE_IOS_FULLSCREEN = new URLSearchParams(globalThis.location?.search || '').get('nativeFullscreen') === '1';
 let MiniplayerCooldown = Date.now() + 500;
 export class InterfaceController {
   constructor(client) {
@@ -45,6 +53,10 @@ export class InterfaceController {
     this.toolManager.setupUI();
     this.fineTimeControls = new FineTimeControls(this.client);
     this.subtitlesManager = new SubtitlesManager(this.client);
+    // Tracks we mirrored onto the <video> for the native iOS fullscreen player,
+    // kept by reference so we can remove them deterministically (label-filtering
+    // is unreliable because removeTextTrack availability differs by Safari).
+    this._nativeSubtitleTracks = [];
     this.playbackRateChanger = new PlaybackRateChanger(this.client);
     this.playbackRateChanger.on('rateChanged', (rate) => {
       this.client.playbackRate = rate;
@@ -216,13 +228,7 @@ export class InterfaceController {
   addVideo(video) {
     this.dressVideo(video);
     video.addEventListener('loadedmetadata', () => {
-      if (video.videoHeight > video.videoWidth) {
-        video.classList.add("portrait");
-        video.classList.remove("landscape");
-      } else {
-        video.classList.add("landscape");
-        video.classList.remove("portrait");
-      }
+      this.applyVideoOrientationClass(video);
     });
     video.addEventListener('webkitfullscreenchange', () => {
       this.setFullscreenStatus(!!video.webkitDisplayingFullscreen);
@@ -986,6 +992,7 @@ export class InterfaceController {
       this.state.windowedFullscreen = newValue;
       if (this.state.windowedFullscreen) {
         this.lockLandscapeOrientation();
+        this.applyVideoOrientationClass(DOMElements.videoContainer?.querySelector('video'));
         this.hideControlBar();
       } else {
         this.unlockOrientationIfIdle();
@@ -1000,6 +1007,7 @@ export class InterfaceController {
       this.state.windowedFullscreen = response === 'enter';
       if (this.state.windowedFullscreen) {
         this.lockLandscapeOrientation();
+        this.applyVideoOrientationClass(DOMElements.videoContainer?.querySelector('video'));
         this.hideControlBar();
       } else {
         this.unlockOrientationIfIdle();
@@ -1009,13 +1017,48 @@ export class InterfaceController {
   }
   async fullscreenToggle(force) {
     // iOS (iPhone) has no element Fullscreen API: document.fullscreenEnabled is
-    // false and Apple only lets a <video> go fullscreen. The native video player
-    // cannot be CSS-rotated and obeys the device rotation lock, so use the
-    // in-page windowed fullscreen here: the host page makes the iframe fill the
-    // screen and the portrait CSS rotation forces landscape no matter how the
-    // phone is held. The cost is that a normal browser tab keeps its toolbar
-    // (a page cannot hide it); a Home-Screen app has none.
+    // false and Apple only lets a <video> go fullscreen. Which fullscreen to use
+    // then depends on the surface, decided by the host (?nativeFullscreen=1):
+    // - Safari tab: a page cannot hide Safari's URL bar/tabs, but the NATIVE
+    //   video fullscreen can — use it. Trade-off: the native player follows
+    //   device rotation (rotation-locked + portrait = portrait player), which
+    //   is the original bug the windowed path fixed, so the viewer rotates the
+    //   phone themselves here.
+    // - Home-Screen app: no chrome to hide, and the portrait case is exactly
+    //   what the windowed path exists for — the host omits the param and the
+    //   in-page windowed fullscreen (iframe fills the viewport + CSS rotation
+    //   forces landscape) stays the default.
     if (!document.fullscreenEnabled) {
+      if (force !== false && NATIVE_IOS_FULLSCREEN) {
+        const nativeVideo = DOMElements.videoContainer?.querySelector('video');
+        if (typeof nativeVideo?.webkitEnterFullscreen === 'function') {
+          // Guard against re-entry: a double tap while already fullscreen would
+          // otherwise mirror a second track (the removal above can't help if
+          // removeTextTrack is unavailable on this Safari).
+          if (nativeVideo.webkitDisplayingFullscreen) {
+            return;
+          }
+          try {
+            // The native iOS player renders only the <video>'s OWN text tracks,
+            // and our subtitles are DOM overlays, so copy the active tracks onto
+            // the video first or fullscreen would show none. Must happen BEFORE
+            // webkitEnterFullscreen: iOS reads the tracks when it takes over.
+            this.syncNativeSubtitleTracks(nativeVideo);
+            for (const t of this._nativeSubtitleTracks) {
+              try {
+                t.mode = 'showing';
+              } catch (e) {
+                void e;
+              }
+            }
+            nativeVideo.webkitEnterFullscreen();
+            return;
+          } catch (e) {
+            // Not eligible yet (e.g. metadata not loaded) — fall through to
+            // windowed so the button never dead-ends.
+          }
+        }
+      }
       this.toggleWindowedFullscreen(force);
       return;
     }
@@ -1076,6 +1119,7 @@ export class InterfaceController {
   }
   setFullscreenStatus(status) {
     const fullScreenButton = DOMElements.fullscreen;
+    const video = DOMElements.videoContainer?.querySelector('video');
     if (status) {
       fullScreenButton.classList.add('out');
       this.state.fullscreen = true;
@@ -1083,20 +1127,100 @@ export class InterfaceController {
       this.hideControlBar();
     } else {
       fullScreenButton.classList.remove('out');
+      this.showControlBar();
+      // Leaving native iOS fullscreen: drop the mirrored tracks so the in-page
+      // FastStream overlay is the only subtitle renderer again (otherwise both
+      // the native captions and the overlay show).
+      this.cleanupNativeSubtitleTracks(video);
       if (this.state.fullscreen) {
         this.state.fullscreen = false;
         this.unlockOrientationIfIdle();
         this.fullscreenToggle(false);
       }
     }
-    const video = DOMElements.videoContainer?.querySelector('video');
-    if (video && video.videoHeight > video.videoWidth) {
-      video.classList.add("portrait");
-      video.classList.remove("landscape");
+    this.applyVideoOrientationClass(video);
+  }
+  // Tags the <video> landscape/portrait so custom.css can object-fit: fill a
+  // landscape video. Must run on EVERY entry into a fullscreen-ish mode, not
+  // only on loadedmetadata: a windowed-fullscreen video that was already loaded
+  // never re-fires loadedmetadata, so without this the class is missing and the
+  // video stays at the default object-fit (contain), pillarboxing left/right.
+  applyVideoOrientationClass(video) {
+    if (!video || !video.videoWidth) return;
+    if (video.videoHeight > video.videoWidth) {
+      video.classList.add('portrait');
+      video.classList.remove('landscape');
     } else {
-      video?.classList.add("landscape");
-      video?.classList.remove("portrait");
+      video.classList.add('landscape');
+      video.classList.remove('portrait');
     }
+  }
+  // Copy the active FastStream subtitle tracks onto the <video> as real
+  // TextTracks. FastStream draws subtitles as DOM overlays, which the native iOS
+  // fullscreen player cannot see; this is the only way subtitles survive there.
+  // Idempotent: prior mirrored tracks are removed first, so repeated fullscreen
+  // entries do not stack duplicates. The mirrored track is additive — it does
+  // not affect the in-page overlay path.
+  syncNativeSubtitleTracks(video) {
+    if (!video || typeof video.addTextTrack !== 'function') return;
+    const manager = this.subtitlesManager;
+    const activeTracks = manager?.activeTracks || [];
+    // Remove every track we mirrored previously, by reference (not by label):
+    // removeTextTrack is missing on some Safari versions, so fall back to
+    // disabling so at least they stop rendering.
+    for (const t of this._nativeSubtitleTracks) {
+      try {
+        if (typeof video.removeTextTrack === 'function') {
+          video.removeTextTrack(t);
+        }
+      } catch (e) {
+        void e;
+      }
+      try {
+        t.mode = 'disabled';
+      } catch (e) {
+        void e;
+      }
+    }
+    this._nativeSubtitleTracks = [];
+    if (activeTracks.length === 0) {
+      return;
+    }
+    // Mirror the FIRST active track only: the native iOS UI shows one caption
+    // track at a time, and stacking several would make them overlap on screen.
+    const source = activeTracks[0];
+    const track = video.addTextTrack('subtitles', '__fs_native__' + (source.label || ''), source.language || '');
+    // Created hidden so it cannot render in-page captions; flipped to
+    // 'showing' only for the native fullscreen takeover (see fullscreenToggle).
+    track.mode = 'hidden';
+    this._nativeSubtitleTracks.push(track);
+    for (const cue of SubtitleUtils.cuesToVttCueData(source.cues)) {
+      try {
+        track.addCue(new VTTCue(cue.startTime, cue.endTime, cue.text));
+      } catch (e) {
+        // A malformed cue must not abort the rest of the track.
+      }
+    }
+  }
+  // Remove/disable every track we mirrored onto the <video> for native iOS
+  // fullscreen. Called when leaving native fullscreen so the in-page FastStream
+  // overlay is the only subtitle renderer again (otherwise both show).
+  cleanupNativeSubtitleTracks(video) {
+    const target = video || DOMElements.videoContainer?.querySelector('video');
+    if (!target) return;
+    for (const t of this._nativeSubtitleTracks) {
+      try {
+        t.mode = 'disabled';
+      } catch (e) {
+        void e;
+      }
+      try {
+        if (typeof target.removeTextTrack === 'function') target.removeTextTrack(t);
+      } catch (e) {
+        void e;
+      }
+    }
+    this._nativeSubtitleTracks = [];
   }
   playPauseToggle() {
     if (!this.client.player) return;

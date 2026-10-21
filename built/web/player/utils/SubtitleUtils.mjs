@@ -130,6 +130,30 @@ export class SubtitleUtils {
     return result.join('\n\n');
   }
   /**
+   * Maps parsed subtitle cues to plain {startTime, endTime, text} objects,
+   * skipping malformed entries. Used to mirror the DOM-overlay subtitle tracks
+   * onto the <video> as native TextTracks for the native iOS fullscreen player.
+   * @param {Array} cues - Cues with numeric startTime/endTime and string text.
+   * @return {Array} Plain cue-data objects safe to feed to VTTCue.
+   */
+  static cuesToVttCueData(cues) {
+    const result = [];
+    if (!cues) return result;
+    for (let i = 0; i < cues.length; i++) {
+      const cue = cues[i];
+      if (!cue) continue;
+      const startTime = Number(cue.startTime);
+      const endTime = Number(cue.endTime);
+      if (!isFinite(startTime) || !isFinite(endTime) || endTime < startTime) continue;
+      result.push({
+        startTime,
+        endTime,
+        text: cue.text == null ? '' : String(cue.text),
+      });
+    }
+    return result;
+  }
+  /**
    * Converts a single SRT caption to a formatted string.
    * @param {Object} caption - SRT caption object.
    * @return {string} Formatted caption string.
