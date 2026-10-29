@@ -13,7 +13,7 @@ export const DefaultOptions = {
   playStreamURLs: false,
   analyzeVideos: false,
   downloadAll: true,
-  previewEnabled: true,
+  previewEnabled: !EnvUtils.isMobile(),
   autoEnableBestSubtitles: false,
   storeProgress: true,
   autoplayYoutube: EnvUtils.isExtension(),

@@ -78,6 +78,11 @@ if (EnvUtils.isSafari()) {
   daltonizerType.disabled = true;
   daltonizerStrength.disabled = true;
 }
+
+if (EnvUtils.isMobile()) {
+  previewEnabled.disabled = true;
+  previewEnabled.checked = false;
+}
 async function loadOptions(newOptions) {
   newOptions = newOptions || OptionsStore.get();
   Options = newOptions;

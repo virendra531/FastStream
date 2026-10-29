@@ -74,7 +74,7 @@ export class FastStreamClient extends EventEmitter {
       freeUnusedChannels: true,
       storeProgress: false,
       disableLoadProgress: false,
-      previewEnabled: true,
+      previewEnabled: !EnvUtils.isMobile(),
       autoplayNext: false,
       singleClickAction: ClickActions.HIDE_CONTROLS,
       doubleClickAction: ClickActions.PLAY_PAUSE,
@@ -349,7 +349,7 @@ export class FastStreamClient extends EventEmitter {
     // save color theme to local storage
     localStorage.setItem('faststream-color-theme', options.colorTheme);
     this.loadProgressData();
-    if (this.options.previewEnabled) {
+    if (this.options.previewEnabled && !EnvUtils.isMobile()) {
       this.setupPreviewPlayer().catch((e) => {
         console.error(e);
       });
@@ -723,7 +723,7 @@ export class FastStreamClient extends EventEmitter {
    * @return {Promise<void>}
    */
   async setupPreviewPlayer() {
-    if (!this.player || this.previewPlayer || !this.options.previewEnabled) {
+    if (!this.player || this.previewPlayer || !this.options.previewEnabled || EnvUtils.isMobile()) {
       return;
     }
     if (this.player.getSource()) {
@@ -1653,6 +1653,10 @@ export class FastStreamClient extends EventEmitter {
       this.previewPlayer = null;
       this.interfaceController.resetPreviewVideo();
       if (!this.interfaceController.failed) {
+        if (!EnvUtils.isExtension() || EnvUtils.isMobile()) {
+          this.options.previewEnabled = false;
+          return;
+        }
         const now = Date.now();
         if (this.lastPreviewReload && now - this.lastPreviewReload < 1000) {
           return;
