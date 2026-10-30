@@ -732,6 +732,8 @@ export class FastStreamClient extends EventEmitter {
       });
       // check if its yt mode
       this.attachProcessorsToPlayer(this.previewPlayer);
+      // Append to DOM before setup so Firefox can attach MediaSource to a
+      // connected video element.
       this.interfaceController.addPreviewVideo(this.previewPlayer.getVideo());
       await this.previewPlayer.setup();
       this.bindPreviewPlayer(this.previewPlayer);
@@ -1653,6 +1655,10 @@ export class FastStreamClient extends EventEmitter {
       this.previewPlayer = null;
       this.interfaceController.resetPreviewVideo();
       if (!this.interfaceController.failed) {
+        // Don't permanently disable on a transient failure: a single error
+        // would kill the preview for the whole session. In web mode we cannot
+        // reload in a tight loop (late XHRs crash on the destroyed instance),
+        // so retry at most once, paced by the throttle below.
         if (!EnvUtils.isExtension() || EnvUtils.isMobile()) {
           const now = Date.now();
           if (this.lastPreviewReload && now - this.lastPreviewReload < 2000) {
