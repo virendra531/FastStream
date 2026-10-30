@@ -28,7 +28,7 @@ export function createDropdown(defaultChoice, title, items, call, editableCallba
     }
   }
   container.appendChild(itemListElement);
-  setupDropdown(itemListElement, text, container, call);
+  setupDropdown(itemListElement, text, container, call, title);
   if (editableCallback) {
     span.style.cursor = 'text';
     span.addEventListener('input', (e) => {
@@ -57,7 +57,7 @@ export function createDropdown(defaultChoice, title, items, call, editableCallba
   }
   return container;
 }
-function setupDropdown(itemListElement, text, container, call) {
+function setupDropdown(itemListElement, text, container, call, title) {
   container.addEventListener('mouseleave', (e) => {
     container.blur();
   });
@@ -114,7 +114,7 @@ function setupDropdown(itemListElement, text, container, call) {
           }
         }
         e.stopPropagation();
-        container.ariaLabel = text + ': ' + el.textContent;
+        container.ariaLabel = title + ': ' + el.textContent;
         if (call) call(container.dataset.val, prevValue);
       });
     })(i);

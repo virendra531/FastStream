@@ -251,7 +251,7 @@ export class SyncedAudioPlayer extends EventEmitter {
     });
   }
   setLevel(videoLevel, audioLevel) {
-    const changed = false;
+    let changed = false;
     this.audioPlayers.forEach((player) => {
       const videoChanged = player.getCurrentVideoLevelID() !== videoLevel;
       const audioChanged = player.getCurrentAudioLevelID() !== audioLevel;

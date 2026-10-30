@@ -18,7 +18,8 @@ export class SubtitleSyncer extends EventEmitter {
     if (!this.started) return;
     this.trackToSync.shift(delta);
     this.client.interfaceController.subtitlesManager.renderSubtitles();
-    this.onVideoTimeUpdate();
+    // Redraw the cues on the timeline on the next frame.
+    this.lastUpdate = 0;
   }
   setup() {
     this.ui = {};
@@ -29,6 +30,9 @@ export class SubtitleSyncer extends EventEmitter {
     let grabbedCue = null;
     let grabbedEdge = null;
     this.ui.timelineTrack.addEventListener('mousedown', (e) => {
+      // Left button only. A right-click opens the context menu, which eats the
+      // mouseup, so the track would keep following the pointer.
+      if (e.button !== 0) return;
       isGrabbingTrack = true;
       grabStartTrack = e.clientX;
       if (window.subEditMode && !e.shiftKey) {
@@ -143,6 +147,8 @@ export class SubtitleSyncer extends EventEmitter {
           if (window.subEditMode) return;
           this.trackToSync.shift(amount);
         }
+        // Cues moved into view are drawn right away, not up to 500 ms later.
+        this.lastUpdate = 0;
         this.client.interfaceController.subtitlesManager.renderSubtitles();
       }
     });
@@ -205,7 +211,7 @@ export class SubtitleSyncer extends EventEmitter {
       this.lastUpdate = now;
       const cues = this.trackToSync.cues;
       this.visibleCues = cues.filter((cue) => {
-        return cue.startTime <= maxTime || cue.endTime >= minTime;
+        return cue.startTime <= maxTime && cue.endTime >= minTime;
       });
     }
     this.trackElements = this.trackElements.filter((el) => {

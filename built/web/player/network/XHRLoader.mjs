@@ -83,6 +83,7 @@ export class XHRLoader {
     const stats = this.stats;
     stats.loading.first = 0;
     stats.loaded = 0;
+    stats.aborted = false;
     const method = request.method || 'GET';
     try {
       xhr.open(method, request.url, true);

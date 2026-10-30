@@ -11,6 +11,7 @@ ModesMap.set('ts', PlayerModes.ACCELERATED_MP4);
 ModesMap.set('m2ts', PlayerModes.ACCELERATED_MP4);
 ModesMap.set('youtube', PlayerModes.ACCELERATED_YT);
 ModesMap.set('vmpatch', PlayerModes.ACCELERATED_VM);
+ModesMap.set('panopto', PlayerModes.ACCELERATED_PANOPTO);
 /**
  * Utility functions for working with URLs and extracting identifiers.
  */

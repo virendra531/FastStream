@@ -12,9 +12,7 @@ export class HLSDecrypter {
     }
     const id = this.lastId++;
     return new Promise((resolve, reject) => {
-      this.encryptionWorkerCallbacks.set(id, (data, idn) => {
-        resolve(data);
-      });
+      this.encryptionWorkerCallbacks.set(id, (data, error) => error ? reject(error) : resolve(data));
       this.encryptionWorker.postMessage({
         encrypted: data,
         iv: iv,
@@ -27,6 +25,9 @@ export class HLSDecrypter {
     if (this.encryptionWorker) {
       this.encryptionWorker.terminate();
       this.encryptionWorker = null;
+      // A terminated worker never answers, so fail what is still waiting on it.
+      this.encryptionWorkerCallbacks.forEach((callback) => callback(null, new Error('Decrypter destroyed')));
+      this.encryptionWorkerCallbacks.clear();
     }
     this.destroyed = true;
   }

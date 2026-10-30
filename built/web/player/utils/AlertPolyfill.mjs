@@ -62,7 +62,7 @@ export class AlertPolyfill {
   static async toast(icon, message, submessage = undefined) {
     return await SweetAlert.fire({
       icon: icon,
-      title: message,
+      titleText: message,
       text: submessage,
       toast: true,
       position: 'top-end',
@@ -92,7 +92,7 @@ export class AlertPolyfill {
     errorHtml.appendChild(bodyText);
     errorHtml.appendChild(stackText);
     return await SweetAlert.fire({
-      title: Localize.getMessage('error_popup', [error?.message]),
+      titleText: Localize.getMessage('error_popup', [error?.message]),
       html: errorHtml,
       icon: 'error',
       showCancelButton: true,
@@ -126,7 +126,7 @@ export class AlertPolyfill {
       errorHtml.appendChild(stackText);
     }
     return await SweetAlert.fire({
-      title: Localize.getMessage('yterror_popup', [error?.message]),
+      titleText: Localize.getMessage('yterror_popup', [error?.message]),
       html: errorHtml,
       icon: 'error',
       showCancelButton: true,

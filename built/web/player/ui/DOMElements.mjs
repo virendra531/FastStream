@@ -49,6 +49,7 @@ export const DOMElements = {
   resetFailed: document.querySelector('.mainplayer .reset_failed'),
   skipSegmentsContainer: document.querySelector('.mainplayer .intro_outro_container'),
   skipButton: document.querySelector('.mainplayer .skip_button'),
+  vpnButton: document.querySelector('.mainplayer .vpn_button'),
   nextVideoBannerButton: document.querySelector('.mainplayer .next_video_button'),
   autoNextIndicator: document.querySelector('.mainplayer .nextvideo_banner'),
   markerContainer: document.querySelector('.mainplayer .marker_container'),

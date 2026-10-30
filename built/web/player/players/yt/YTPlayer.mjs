@@ -14,6 +14,7 @@ import {Utils} from '../../utils/Utils.mjs';
 import {VideoSource} from '../../VideoSource.mjs';
 import DashPlayer from '../dash/DashPlayer.mjs';
 import {SandboxedEvaluator} from './SandboxedEvaluator.mjs';
+import {getPoTokens} from './WebPoToken.mjs';
 // Log.setLevel(
 //     Log.Level.WARNING,
 //     Log.Level.ERROR,
@@ -94,15 +95,23 @@ export default class YTPlayer extends DashPlayer {
           adapter.setServerAbrFormats(sabrFormats);
           adapter.setUstreamerConfig(videoPlaybackUstreamerConfig);
           adapter.onMintPoToken(async () => {
-            return (await getPoTokens(this.ytclient.session, identifier)).contentToken;
+            const tokens = await getPoTokens(identifier, this.ytclient.session.context.client.visitorData);
+            this.ytclient.session.content_token = tokens.contentToken;
+            this.ytclient.session.po_token = tokens.contentToken;
+            this.ytclient.session.player.po_token = tokens.sessionToken;
+            return tokens.contentToken;
           });
           adapter.onSnackbarMessage((message) => {
             console.warn('Sabr Snackbar Message:', message);
           });
           adapter.onReloadPlayerResponse(async (reloadPlaybackContext) => {
+            const tokens = await getPoTokens(identifier, this.ytclient.session.context.client.visitorData);
+            this.ytclient.session.content_token = tokens.contentToken;
+            this.ytclient.session.po_token = tokens.contentToken;
+            this.ytclient.session.player.po_token = tokens.sessionToken;
             const newInfo = await this.ytclient.getInfo(identifier, {
               client: this.defaultClient,
-              po_token: this.ytclient.session.content_token,
+              po_token: tokens.contentToken,
             }, reloadPlaybackContext);
             this.videoInfo = newInfo;
             const serverAbrStreamingUrl = await this.ytclient.session.player?.decipher(this.videoInfo.streaming_data?.server_abr_streaming_url);
@@ -361,14 +370,16 @@ export default class YTPlayer extends DashPlayer {
   }
   async getVideoInfo(identifier, mode) {
     const cache = (await IndexedDBManager.isSupportedAndAvailable() && !EnvUtils.isIncognito()) ? new UniversalCache() : undefined;
+    // WebPO tokens are for web clients. Keep the iOS fallback independent of the page's client.
+    const tokens = mode === ClientType.IOS ? {} : await getPoTokens(identifier);
     const youtube = await Innertube.create({
       cache,
       fetch: (mode === ClientType.IOS) ? this.youtubeFetchIOS.bind(this) : this.youtubeFetch.bind(this),
       client_type: mode === ClientType.IOS ? undefined : mode,
       sandboxGetter: this.sandboxGetter,
       player_id: this.forcedPlayerID || undefined,
+      visitor_data: tokens.visitorData,
     });
-    const tokens = await getPoTokens(youtube.session, identifier);
     youtube.session.player.po_token = tokens.sessionToken;
     youtube.session.po_token = tokens.contentToken;
     youtube.session.content_token = tokens.contentToken;
@@ -728,77 +739,4 @@ function buildSabrFormat(formatStream) {
     isOriginal: formatStream.is_original,
     isSecondary: formatStream.is_secondary,
   };
-}
-async function getPoTokens(session, videoId) {
-  const visitorData = session.context.client.visitorData;
-  // first, check cache
-  const poTokenCache = JSON.parse(localStorage.getItem('po_token_cache') || '{}');
-  if (!poTokenCache.sessionCache) {
-    poTokenCache.sessionCache = {};
-  }
-  if (!poTokenCache.contentCache) {
-    poTokenCache.contentCache = [];
-  }
-  const now = Date.now();
-  const sessionCache = poTokenCache.sessionCache;
-  let sessionToken = null;
-  if (sessionCache.token && sessionCache.visitorData === visitorData && sessionCache.expires > now) {
-    // session cache is valid, return it
-    sessionToken = sessionCache.token;
-  }
-  let contentToken = null;
-  // find videoId in content cache
-  const contentCache = poTokenCache.contentCache.find((item) => item.videoId === videoId);
-  if (contentCache && contentCache.token && contentCache.expires > now) {
-    // content cache is valid, return it
-    contentToken = contentCache.token;
-  }
-  if (!sessionToken || !contentToken) {
-    const identifiers = [];
-    if (!contentToken) {
-      identifiers.push(videoId);
-    }
-    if (!sessionToken) {
-      identifiers.push(visitorData);
-    }
-    console.log('Requesting PoToken for identifiers:', identifiers);
-    const result = await session.getPot(identifiers).catch((e) => {
-      console.warn('Failed to get PoToken', e);
-      return null;
-    });
-    if (!result) {
-      return {contentToken, sessionToken};
-    }
-    const expires = Date.now() + (result.ttl * 1000 * 0.8); // 20% margin
-    result.result.forEach((item) => {
-      if (item.error) {
-        console.warn('PoToken error for', item.identifier, item.error);
-        return;
-      }
-      if (item.id === visitorData) {
-        sessionToken = item.pot;
-        sessionCache.token = item.pot;
-        sessionCache.visitorData = visitorData;
-        sessionCache.expires = expires;
-      } else if (item.id === videoId) {
-        contentToken = item.pot;
-        // Remove old tokens that are expired
-        const now = Date.now();
-        poTokenCache.contentCache = poTokenCache.contentCache.filter((c) => c.expires > now);
-        // Remove old content token if exists
-        poTokenCache.contentCache = poTokenCache.contentCache.filter((c) => c.videoId !== videoId);
-        // Limit to 5
-        if (poTokenCache.contentCache.length >= 5) {
-          poTokenCache.contentCache.shift();
-        }
-        poTokenCache.contentCache.push({
-          videoId,
-          token: item.pot,
-          expires,
-        });
-      }
-    });
-    localStorage.setItem('po_token_cache', JSON.stringify(poTokenCache));
-  }
-  return {contentToken, sessionToken};
 }
