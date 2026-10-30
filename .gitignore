@@ -2,3 +2,6 @@
 web-ext-artifacts
 node_modules
 output/
+# Build artifacts
+build_*/
+built/*.zip
