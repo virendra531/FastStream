@@ -39,6 +39,7 @@ export const DefaultKeybinds = {
   'ZoomReset': 'None',
   'ToggleVisualFilters': 'KeyQ',
   'ToggleBlackBars': 'None',
+  'CycleAspectRatio': 'None',
 };
 
 export const KeybindsWithModifiers = [
