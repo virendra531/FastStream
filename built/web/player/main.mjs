@@ -229,6 +229,9 @@ async function sortSubtitles(subs) {
 async function loadOptions() {
   try {
     OPTIONS = await Utils.getOptionsFromStorage();
+    if (window.self !== window.top && !EnvUtils.isMobile()) {
+      OPTIONS.previewEnabled = true;
+    }
     window.fastStream.setOptions(OPTIONS);
   } catch (e) {
     console.error(e);
