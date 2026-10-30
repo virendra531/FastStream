@@ -820,11 +820,14 @@ export class FastStreamClient extends EventEmitter {
       // check if its yt mode
       this.attachProcessorsToPlayer(this.previewPlayer);
 
+      // Append to DOM before setup so Firefox can attach MediaSource to a
+      // connected video element.
+      this.interfaceController.addPreviewVideo(this.previewPlayer.getVideo());
+
       await this.previewPlayer.setup();
       this.bindPreviewPlayer(this.previewPlayer);
 
       await this.previewPlayer.setSource(this.player.getSource());
-      this.interfaceController.addPreviewVideo(this.previewPlayer.getVideo());
       this.updateCSSFilters();
     }
   }

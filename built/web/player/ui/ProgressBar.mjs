@@ -86,6 +86,9 @@ export class ProgressBar extends EventEmitter {
     DOMElements.progressContainer.addEventListener('mouseenter', this.onProgressbarMouseEnter.bind(this));
     DOMElements.progressContainer.addEventListener('mouseleave', this.onProgressbarMouseLeave.bind(this));
     DOMElements.progressContainer.addEventListener('mousemove', this.onProgressbarMouseMove.bind(this));
+    DOMElements.progressContainer.addEventListener('mouseover', this.onProgressbarMouseEnter.bind(this));
+    DOMElements.progressContainer.addEventListener('pointerenter', this.onProgressbarMouseEnter.bind(this));
+    DOMElements.progressContainer.addEventListener('pointermove', this.onProgressbarMouseMove.bind(this));
     DOMElements.nextVideoBannerButton.addEventListener('click', (e) => {
       this.client.nextVideo();
       e.preventDefault();
@@ -374,6 +377,7 @@ export class ProgressBar extends EventEmitter {
     }
   }
   onProgressbarMouseMove(event) {
+    this.showPreview();
     const currentX = Math.min(Math.max(event.clientX - WebUtils.getOffsetLeft(DOMElements.progressContainer), 0), DOMElements.progressContainer.clientWidth);
     const totalWidth = DOMElements.progressContainer.clientWidth;
     const time = this.client.duration * currentX / totalWidth;

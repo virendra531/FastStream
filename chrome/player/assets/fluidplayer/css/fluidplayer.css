@@ -765,6 +765,10 @@ body {
     white-space: nowrap;
 }
 
+.fluid_controls_progress_container:hover .seek_preview {
+    display: block !important;
+}
+
 .fluid_controls_progress_container .seek_preview_tip {
     position: absolute;
     bottom: 3px;

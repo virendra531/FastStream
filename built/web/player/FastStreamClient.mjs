@@ -732,10 +732,10 @@ export class FastStreamClient extends EventEmitter {
       });
       // check if its yt mode
       this.attachProcessorsToPlayer(this.previewPlayer);
+      this.interfaceController.addPreviewVideo(this.previewPlayer.getVideo());
       await this.previewPlayer.setup();
       this.bindPreviewPlayer(this.previewPlayer);
       await this.previewPlayer.setSource(this.player.getSource());
-      this.interfaceController.addPreviewVideo(this.previewPlayer.getVideo());
       this.updateCSSFilters();
     }
   }
