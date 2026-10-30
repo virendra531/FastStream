@@ -1654,7 +1654,12 @@ export class FastStreamClient extends EventEmitter {
       this.interfaceController.resetPreviewVideo();
       if (!this.interfaceController.failed) {
         if (!EnvUtils.isExtension() || EnvUtils.isMobile()) {
-          this.options.previewEnabled = false;
+          const now = Date.now();
+          if (this.lastPreviewReload && now - this.lastPreviewReload < 2000) {
+            return;
+          }
+          this.lastPreviewReload = now;
+          this.setupPreviewPlayer().catch(() => {});
           return;
         }
         const now = Date.now();

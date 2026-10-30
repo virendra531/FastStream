@@ -265,8 +265,6 @@ async function sortSubtitles(subs) {
 async function loadOptions() {
   try {
     OPTIONS = await Utils.getOptionsFromStorage();
-    // In an embedded (iframe) context such as TvMovieTime, force the seek-hover
-    // preview on for desktop so it is visible regardless of stale stored options.
     if (window.self !== window.top && !EnvUtils.isMobile()) {
       OPTIONS.previewEnabled = true;
     }

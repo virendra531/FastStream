@@ -1907,8 +1907,17 @@ export class FastStreamClient extends EventEmitter {
       this.interfaceController.resetPreviewVideo();
 
       if (!this.interfaceController.failed) {
+        // Don't permanently disable on a transient failure: a single error
+        // would kill the preview for the whole session. In web mode we cannot
+        // reload in a tight loop (late XHRs crash on the destroyed instance),
+        // so retry at most once, paced by the throttle below.
         if (!EnvUtils.isExtension() || EnvUtils.isMobile()) {
-          this.options.previewEnabled = false;
+          const now = Date.now();
+          if (this.lastPreviewReload && now - this.lastPreviewReload < 2000) {
+            return;
+          }
+          this.lastPreviewReload = now;
+          this.setupPreviewPlayer().catch(() => {});
           return;
         }
         const now = Date.now();
