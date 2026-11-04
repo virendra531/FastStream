@@ -40,7 +40,8 @@ export default class HLSPlayer extends EventEmitter {
       initialLiveManifestSize: 1,
       maxBufferLength: 10,
       maxMaxBufferLength: 10,
-      backBufferLength: 10,
+      // 10s flushed already-watched video, so scrubbing back re-downloaded it.
+      backBufferLength: this.isPreview ? 10 : 120,
       maxBufferSize: 10 * 1000 * 1000,
       maxBufferHole: 0.5,
       highBufferWatchdogPeriod: 2,

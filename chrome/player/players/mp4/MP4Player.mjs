@@ -26,7 +26,8 @@ export default class MP4Player extends EventEmitter {
     this.mp4box = MP4Box.createFile(false);
 
     this.options = {
-      backBufferLength: 10,
+      // 10s flushed already-watched video, so scrubbing back re-downloaded it.
+      backBufferLength: this.isPreview ? 10 : 120,
       maxFragmentsBuffered: 30,
       maxBufferLength: this.isPreview ? 10 : 30,
     };
