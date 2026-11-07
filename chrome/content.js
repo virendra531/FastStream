@@ -239,7 +239,7 @@
   }
 
   function handlePlayerOpen(request, sender, sendResponse) {
-    getVideo(true).then((video) => {
+    getVideo(true).then(async (video) => {
       if (!video && !request.force) {
         console.log('no video found');
         sendResponse('no_video');
