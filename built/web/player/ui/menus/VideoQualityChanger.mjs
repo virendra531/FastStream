@@ -271,17 +271,18 @@ export class VideoQualityChanger extends EventEmitter {
       console.warn('No current level');
       return;
     }
-    let maxSize = Math.min(current.width, current.height);
-    if (maxSize <= 0) {
-      maxSize = Math.min(client.videoWidth, client.videoHeight);
+    // Quality labels track the height ("p") value, including for portrait videos.
+    let qualityHeight = current.height;
+    if (qualityHeight <= 0) {
+      qualityHeight = client.videoHeight;
     }
     const qualityList = {
-      'sd': maxSize < 720,
-      'hd': maxSize >= 720 && maxSize < 1080,
-      'fhd': maxSize >= 1080 && maxSize < 1440,
-      '2k': maxSize >= 1440 && maxSize < 2160,
-      '4k': maxSize >= 2160 && maxSize < 4320,
-      '8k': maxSize >= 4320,
+      'sd': qualityHeight < 720,
+      'hd': qualityHeight >= 720 && qualityHeight < 1080,
+      'fhd': qualityHeight >= 1080 && qualityHeight < 1440,
+      '2k': qualityHeight >= 1440 && qualityHeight < 2160,
+      '4k': qualityHeight >= 2160 && qualityHeight < 4320,
+      '8k': qualityHeight >= 4320,
     };
     for (const quality in qualityList) {
       if (!Object.hasOwn(qualityList, quality)) {
