@@ -10,6 +10,8 @@ import {MP4Fragment} from './MP4Fragment.mjs';
 import {MP4FragmentRequester} from './MP4FragmentRequester.mjs';
 import {SourceBufferWrapper} from './SourceBufferWrapper.mjs';
 const FRAGMENT_SIZE = 1000000;
+// One append per frame starves high-frame-rate playback, so batch a second of frames.
+const SAMPLES_PER_SEGMENT = 60;
 const VIDEO_TRACK = 0;
 const AUDIO_TRACK = 1;
 export default class MP4Player extends EventEmitter {
@@ -37,6 +39,7 @@ export default class MP4Player extends EventEmitter {
     this.currentAudioTrack = this.isPreview ? null : 0;
     this.currentFragments = [];
     this._duration = 0;
+    this.lastRemoveEnd = 0;
   }
   load() {
     this.loaded = true;
@@ -106,12 +109,12 @@ export default class MP4Player extends EventEmitter {
     };
     if (videoTrack) {
       this.mp4box.setSegmentOptions(videoTrack.id, 1, {
-        nbSamples: 1,
+        nbSamples: SAMPLES_PER_SEGMENT,
       });
     }
     if (audioTrack) {
       this.mp4box.setSegmentOptions(audioTrack.id, 1, {
-        nbSamples: 1,
+        nbSamples: SAMPLES_PER_SEGMENT,
       });
     }
     const initSegs = this.mp4box.initializeSegmentation();
@@ -327,7 +330,11 @@ export default class MP4Player extends EventEmitter {
         i--;
       }
     }
-    this.removeFromBuffers(0, Math.min(time - this.options.backBufferLength - 1, currentFragment.start));
+    const removeEnd = Math.min(time - this.options.backBufferLength - 1, currentFragment.start);
+    if (removeEnd - this.lastRemoveEnd >= 1) {
+      this.removeFromBuffers(0, removeEnd);
+      this.lastRemoveEnd = removeEnd;
+    }
     const len = frags.length;
     for (let i = currentFragment.sn; i < Math.min(currentFragment.sn + this.options.maxFragmentsBuffered, len); i++) {
       const frag = this.client.getFragment(this.getCurrentVideoLevelID(), i);
