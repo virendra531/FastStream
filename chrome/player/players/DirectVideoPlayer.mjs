@@ -32,6 +32,9 @@ export default class DirectVideoPlayer extends EventEmitter {
 
   async setSource(source) {
     this.source = source;
+    // Web Audio outputs silence for a CORS-cross-origin media resource, so the
+    // request must be CORS-enabled before src starts the load.
+    this.video.crossOrigin = 'anonymous';
     this.video.src = source.url;
   }
 
