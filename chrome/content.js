@@ -246,21 +246,43 @@
         return;
       }
 
+      let domSources = [];
       if (video && video.video) {
         try {
-          const domSources = await extractSourcesFromDOM();
-          domSources.forEach((s) => {
-            chrome.runtime.sendMessage({
-              type: 'DETECTED_SOURCE',
-              url: s.url,
-              ext: s.ext,
-              headers: {
-                'Referer': location.href,
-                'Origin': location.origin,
-              },
-            });
-          });
+          domSources = await extractSourcesFromDOM();
         } catch (e) {}
+      }
+
+      // A page can play through a MediaSource/blob the extension cannot address by URL.
+      // Replacing its player with an empty one only breaks a working page, so leave the
+      // page alone unless the user explicitly forced the player open.
+      if (!request.force && !request.hasSources && domSources.length === 0) {
+        console.log('no playable source found');
+        sendResponse('no_video');
+        return;
+      }
+
+      if (video && video.video) {
+        domSources.forEach((s) => {
+          const headers = {
+            'Referer': location.href,
+            'Origin': location.origin,
+          };
+          // The player's requests come from the extension origin, so they miss the page's
+          // cookies. Session-bound media URLs (KVS tubes, for example) answer 410 without
+          // them. Only copy cookies to the page's own origin so they cannot leak elsewhere.
+          try {
+            if (new URL(s.url, location.href).origin === location.origin && document.cookie) {
+              headers['Cookie'] = document.cookie;
+            }
+          } catch (e) {}
+          chrome.runtime.sendMessage({
+            type: 'DETECTED_SOURCE',
+            url: s.url,
+            ext: s.ext,
+            headers,
+          });
+        });
       }
 
       const playerFillsScreen = video?.highest?.tagName === 'BODY';
@@ -1277,7 +1299,7 @@
 
     function getExt(url) {
       try {
-        const pathname = new URL(url).pathname;
+        const pathname = new URL(url).pathname.replace(/\/+$/, '');
         const dotIndex = pathname.lastIndexOf('.');
         if (dotIndex > -1) return pathname.substring(dotIndex + 1).toLowerCase().split('?')[0];
       } catch (e) {}
@@ -1343,7 +1365,7 @@
           const sources = [];
           function getExt(url) {
             try {
-              const p = new URL(url, location.href).pathname;
+              const p = new URL(url, location.href).pathname.replace(/\/+$/, '');
               const i = p.lastIndexOf('.');
               if (i > -1) return p.substring(i + 1).toLowerCase().split('?')[0];
             } catch(e) {}

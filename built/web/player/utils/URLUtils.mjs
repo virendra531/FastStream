@@ -115,7 +115,11 @@ export class URLUtils {
     return url.split(/[#?]/)[0];
   }
   static get_url_extension(url) {
-    const ext = this.strip_queryhash(url).split('.').pop().trim().toLowerCase();
+    // A trailing slash after the file name (`.../video.mp4/`) is common on CDN
+    // redirects. Drop it before reading the extension, or the extension becomes
+    // `mp4/`, no mode matches, and the source is treated as HLS and fails to parse.
+    const path = this.strip_queryhash(url).replace(/\/+$/, '');
+    const ext = path.split('.').pop().trim().toLowerCase();
     if (ModesMap.has(ext)) return ext;
     // If the path extension isn't recognized, check if the hash fragment
     // contains a video path (e.g. https://example.com/#mp4/chunk/...)

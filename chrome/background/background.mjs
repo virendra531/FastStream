@@ -1315,6 +1315,7 @@ async function openPlayer(frame) {
       noRedirect: frame.frameId === 0,
       frameId: frame.frameId,
       parentFrameId: frame.parent ? frame.parent.frameId : -1,
+      hasSources: frame.getSources().length > 0,
     }, {
       frameId: frame.frameId,
     }, (response) => {
