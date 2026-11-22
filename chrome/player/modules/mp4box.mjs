@@ -6558,12 +6558,9 @@ ISOFile.prototype.setSegmentOptions = function (id, user, options) {
         trak.nextSample = 0;
         fragTrack.segmentStream = null;
         fragTrack.nb_samples = 1000;
-        fragTrack.nb_samples_per_fragment = 1000;
         fragTrack.rapAlignement = true;
         if (options) {
             if (options.nbSamples) fragTrack.nb_samples = options.nbSamples;
-            if (options.nbSamplesPerFragment) fragTrack.nb_samples_per_fragment = options.nbSamplesPerFragment;
-            else fragTrack.nb_samples_per_fragment = fragTrack.nb_samples;
             if (options.rapAlignement) fragTrack.rapAlignement = options.rapAlignement;
         }
     }
@@ -6939,20 +6936,19 @@ ISOFile.prototype.processSamples = function (last) {
             var fragTrak = this.fragmentedTracks[i];
             trak = fragTrak.trak;
             while (trak.nextSample < trak.samples.length && this.sampleProcessingStarted) {
-                /* Bundle several samples into one moof: one moof per frame starves Firefox's
-                   MSE pipeline on high-framerate 4K content. */
-                var endSample = Math.min(trak.nextSample + fragTrak.nb_samples_per_fragment - 1, trak.samples.length - 1);
-                Log.debug("ISOFile", "Creating media fragment on track #" + fragTrak.id + " for samples [" + trak.nextSample + "," + endSample + "]");
-                var result = this.createFragment(fragTrak.id, trak.nextSample, endSample, fragTrak.segmentStream);
+                /* The sample information is there (either because the file is not fragmented and this is not the last sample,
+                or because the file is fragmented and the moof for that sample has been received */
+                Log.debug("ISOFile", "Creating media fragment on track #" + fragTrak.id + " for sample " + trak.nextSample);
+                var result = this.createFragment(fragTrak.id, trak.nextSample, fragTrak.segmentStream);
                 if (result) {
                     fragTrak.segmentStream = result;
-                    trak.nextSample = endSample + 1;
+                    trak.nextSample++;
                 } else {
                     /* The fragment could not be created because the media data is not there (not downloaded), wait for it */
                     break;
                 }
-                /* A fragment holds several samples; the segment accumulates these fragments and is
-                   flushed only as requested by the application (nb_samples) to avoid too many callbacks */
+                /* A fragment is created by sample, but the segment is the accumulation in the buffer of these fragments.
+                   It is flushed only as requested by the application (nb_samples) to avoid too many callbacks */
                 if (trak.nextSample % fragTrak.nb_samples === 0 || (last || trak.nextSample >= trak.samples.length)) {
                     Log.info("ISOFile", "Sending fragmented data on track #" + fragTrak.id + " for samples [" + Math.max(0, trak.nextSample - fragTrak.nb_samples) + "," + (trak.nextSample - 1) + "]");
                     Log.info("ISOFile", "Sample data size in memory: " + this.getAllocatedSampleDataSize());
@@ -7552,41 +7548,6 @@ ISOFile.prototype.createSingleSampleMoof = function (sample) {
         .set("sample_size", [sample.size])
         .set("sample_flags", [sample_flags])
         .set("sample_composition_time_offset", [sample.cts - sample.dts]);
-    return moof;
-}
-
-ISOFile.prototype.createMultiSampleMoof = function (samples) {
-    var trackId = samples[0].track_id;
-    var trak = this.getTrackById(trackId);
-    var durations = [];
-    var sizes = [];
-    var flags = [];
-    var compositionOffsets = [];
-    for (var i = 0; i < samples.length; i++) {
-        var sample = samples[i];
-        durations.push(sample.duration);
-        sizes.push(sample.size);
-        flags.push(sample.is_sync ? (1 << 25) : (1 << 16));
-        compositionOffsets.push(sample.cts - sample.dts);
-    }
-
-    var moof = new BoxParser.moofBox();
-    moof.add("mfhd").set("sequence_number", this.nextMoofNumber);
-    this.nextMoofNumber++;
-    var traf = moof.add("traf");
-    traf.add("tfhd").set("track_id", trackId)
-        .set("flags", BoxParser.TFHD_FLAG_DEFAULT_BASE_IS_MOOF);
-    traf.add("tfdt").set("baseMediaDecodeTime", (samples[0].dts - (trak.first_dts || 0)));
-    traf.add("trun").set("flags", BoxParser.TRUN_FLAGS_DATA_OFFSET | BoxParser.TRUN_FLAGS_DURATION |
-        BoxParser.TRUN_FLAGS_SIZE | BoxParser.TRUN_FLAGS_FLAGS |
-        BoxParser.TRUN_FLAGS_CTS_OFFSET)
-        .set("data_offset", 0)
-        .set("first_sample_flags", 0)
-        .set("sample_count", samples.length)
-        .set("sample_duration", durations)
-        .set("sample_size", sizes)
-        .set("sample_flags", flags)
-        .set("sample_composition_time_offset", compositionOffsets);
     return moof;
 }
 
@@ -8622,22 +8583,18 @@ ISOFile.prototype.write = function (outstream) {
     }
 }
 
-ISOFile.prototype.createFragment = function (track_id, sampleStart, sampleEnd, stream_) {
+ISOFile.prototype.createFragment = function (track_id, sampleNumber, stream_) {
     var trak = this.getTrackById(track_id);
-    var samples = [];
-    for (var i = sampleStart; i <= sampleEnd; i++) {
-        var sample = this.getSample(trak, i);
-        if (sample == null) {
-            this.setNextSeekPositionFromSample(trak.samples[i]);
-            return null;
-        }
-        samples.push(sample);
+    var sample = this.getSample(trak, sampleNumber);
+    if (sample == null) {
+        this.setNextSeekPositionFromSample(trak.samples[sampleNumber]);
+        return null;
     }
 
     var stream = stream_ || new DataStream();
     stream.endianness = DataStream.BIG_ENDIAN;
 
-    var moof = this.createMultiSampleMoof(samples);
+    var moof = this.createSingleSampleMoof(sample);
     moof.write(stream);
 
     /* adjusting the data_offset now that the moof size is known*/
@@ -8645,18 +8602,8 @@ ISOFile.prototype.createFragment = function (track_id, sampleStart, sampleEnd, s
     Log.debug("MP4Box", "Adjusting data_offset with new value " + moof.trafs[0].truns[0].data_offset);
     stream.adjustUint32(moof.trafs[0].truns[0].data_offset_position, moof.trafs[0].truns[0].data_offset);
 
-    var dataSize = 0;
-    for (var j = 0; j < samples.length; j++) {
-        dataSize += samples[j].data.byteLength;
-    }
-    var data = new Uint8Array(dataSize);
-    var offset = 0;
-    for (var k = 0; k < samples.length; k++) {
-        data.set(samples[k].data, offset);
-        offset += samples[k].data.byteLength;
-    }
     var mdat = new BoxParser.mdatBox();
-    mdat.data = data;
+    mdat.data = sample.data;
     mdat.write(stream);
     return stream;
 }
